@@ -33,9 +33,7 @@ export default function Lobby() {
   }, [currentMode]);
 
   useEffect(() => {
-    // If we transition to active and we are in queue, or if we join late during active time
     if (currentMode === 'ACTIVE' && inQueue) {
-      // Clean up the pre-warmed channel so Chat.tsx can take over
       if (queueChannelRef.current) {
         supabase.removeChannel(queueChannelRef.current);
         queueChannelRef.current = null;
@@ -75,18 +73,17 @@ export default function Lobby() {
     useChatStore.getState().setQueueing(true);
 
     if (currentMode === 'QUEUE' && user) {
-        // Pre-warm presence
-        const channel = supabase.channel('campus-queue', {
-            config: { presence: { key: user.id } }
-        });
+      const channel = supabase.channel('campus-queue', {
+        config: { presence: { key: user.id } }
+      });
 
-        queueChannelRef.current = channel;
+      queueChannelRef.current = channel;
 
-        channel.subscribe(async (status) => {
-            if (status === 'SUBSCRIBED') {
-                await channel.track({ joined_at: new Date().toISOString() });
-            }
-        });
+      channel.subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({ joined_at: new Date().toISOString() });
+        }
+      });
     }
   };
 
