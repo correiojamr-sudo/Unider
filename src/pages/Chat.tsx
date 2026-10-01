@@ -38,14 +38,12 @@ export default function Chat() {
 
     const storeState = useChatStore.getState();
 
-    // If no active room AND not currently actively queueing via Lobby, boot to lobby.
     if (!storeState.roomId && !storeState.isQueueing) {
-        navigate('/lobby');
-        return;
+      navigate('/lobby');
+      return;
     }
 
     const initMatchmaking = async () => {
-      // If already in a room, re-subscribe to room channel
       if (storeState.roomId) {
         setupRoomChannel(storeState.roomId);
         return;
@@ -59,36 +57,32 @@ export default function Chat() {
       queueChannelRef.current = queueChannel;
 
       queueChannel.on('presence', { event: 'sync' }, () => {
-        // Prevent new matches after 22:48
         if (getSecondsUntil('22:48:00') === 0 && getSecondsUntil('22:50:00') > 0) {
-            setStatusText('Já não são permitidas novas conversas hoje.');
-            return;
+          setStatusText('Já não são permitidas novas conversas hoje.');
+          return;
         }
 
         const state = queueChannel.presenceState();
         const usersInQueue = Object.keys(state).sort();
 
-        // Deterministic matching: Sort ALL users to ensure every client has the exact same array indices.
         const myIndex = usersInQueue.indexOf(user.id);
 
         if (myIndex !== -1) {
-           let matchedPeer: string | null = null;
+          let matchedPeer: string | null = null;
 
-           if (myIndex % 2 === 0 && myIndex + 1 < usersInQueue.length) {
-              matchedPeer = usersInQueue[myIndex + 1];
-           } else if (myIndex % 2 !== 0) {
-              matchedPeer = usersInQueue[myIndex - 1];
-           }
+          if (myIndex % 2 === 0 && myIndex + 1 < usersInQueue.length) {
+            matchedPeer = usersInQueue[myIndex + 1];
+          } else if (myIndex % 2 !== 0) {
+            matchedPeer = usersInQueue[myIndex - 1];
+          }
 
-           // Only join room if matched peer is not a past partner
-           if (matchedPeer && !pastPartners.includes(matchedPeer)) {
-               // To avoid duplicate join operations, define caller based on deterministic order
-               if (myIndex % 2 === 0) {
-                 joinRoom(user.id, matchedPeer);
-               } else {
-                 joinRoom(matchedPeer, user.id);
-               }
-           }
+          if (matchedPeer && !pastPartners.includes(matchedPeer)) {
+            if (myIndex % 2 === 0) {
+              void joinRoom(user.id, matchedPeer);
+            } else {
+              void joinRoom(matchedPeer, user.id);
+            }
+          }
         }
       });
 
@@ -107,8 +101,11 @@ export default function Chat() {
     };
   }, [currentMode, user, roomId]);
 
-  const joinRoom = (id1: string, id2: string) => {
-    if (queueChannelRef.current) supabase.removeChannel(queueChannelRef.current);
+  const joinRoom = async (id1: string, id2: string) => {
+    if (queueChannelRef.current) {
+      await queueChannelRef.current.untrack();
+      supabase.removeChannel(queueChannelRef.current);
+    }
 
     const newRoomId = `room_${[id1, id2].sort().join('_')}`;
     const newPeerId = id1 === user?.id ? id2 : id1;
@@ -118,13 +115,15 @@ export default function Chat() {
     setupRoomChannel(newRoomId);
     setTimeLeft(120);
 
-    // Fetch random icebreaker
     supabase.from('icebreaker_suggestions')
       .select('suggestion')
       .eq('is_approved', true)
-      .limit(1)
+      .limit(100)
       .then(({ data }) => {
-        if (data && data.length > 0) setIcebreaker(data[0].suggestion);
+        if (data && data.length > 0) {
+          const randomIndex = Math.floor(Math.random() * data.length);
+          setIcebreaker(data[randomIndex].suggestion);
+        }
       });
   };
 
@@ -146,14 +145,13 @@ export default function Chat() {
     });
 
     roomChannel.subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-            setStatusText('');
-        }
+      if (status === 'SUBSCRIBED') {
+        setStatusText('');
+      }
     });
     channelRef.current = roomChannel;
   };
 
-  // Timer logic
   useEffect(() => {
     if (!roomId) return;
 
@@ -167,20 +165,18 @@ export default function Chat() {
     return () => clearInterval(interval);
   }, [roomId]);
 
-  // Extension logic
   useEffect(() => {
     if (extended && peerExtended && timeLeft === 0) {
-      setTimeLeft(180); // +3 mins
+      setTimeLeft(180);
       setExtended(false);
       setPeerExtended(false);
     }
   }, [extended, peerExtended, timeLeft]);
 
-  // Global close logic at 22:50
   useEffect(() => {
     const secondsToClose = getSecondsUntil('22:50:00');
     if (secondsToClose === 0) {
-       handleLeave(true); // Force close
+      handleLeave(true);
     }
   }, [useAppStore(state => state.currentTime)]);
 
@@ -225,7 +221,7 @@ export default function Chat() {
       });
     }
     resetChat();
-    if(force) navigate('/lobby'); // Back to lobby which handles day/night logic
+    if (force) navigate('/lobby');
   };
 
   const handlePeerLeft = () => {
@@ -250,8 +246,8 @@ export default function Chat() {
   if (!roomId) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-4">
-         <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4 mx-auto"></div>
-         <p className="text-slate-400">{statusText}</p>
+        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4 mx-auto"></div>
+        <p className="text-slate-400">{statusText}</p>
       </div>
     );
   }

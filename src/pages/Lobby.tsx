@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/appStore';
 import { useAuthStore } from '../store/authStore';
@@ -6,6 +6,7 @@ import { useChatStore } from '../store/chatStore';
 import { supabase } from '../lib/supabase';
 import { getSecondsUntil, formatTimeCountdown } from '../utils/time';
 import { LogOut, Clock, Send, Users } from 'lucide-react';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 export default function Lobby() {
   const navigate = useNavigate();
@@ -18,6 +19,7 @@ export default function Lobby() {
 
   const [countdown, setCountdown] = useState<number>(0);
   const [inQueue, setInQueue] = useState(false);
+  const queueChannelRef = useRef<RealtimeChannel | null>(null);
 
   useEffect(() => {
     const targetTime = currentMode === 'DAYTIME' ? '22:28:00' : '22:30:00';
@@ -31,11 +33,22 @@ export default function Lobby() {
   }, [currentMode]);
 
   useEffect(() => {
-    // If we transition to active and we are in queue, or if we join late during active time
     if (currentMode === 'ACTIVE' && inQueue) {
+      if (queueChannelRef.current) {
+        supabase.removeChannel(queueChannelRef.current);
+        queueChannelRef.current = null;
+      }
       navigate('/chat');
     }
   }, [currentMode, inQueue, navigate]);
+
+  useEffect(() => {
+    return () => {
+      if (queueChannelRef.current) {
+        supabase.removeChannel(queueChannelRef.current);
+      }
+    };
+  }, []);
 
   const handleSuggest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,9 +68,23 @@ export default function Lobby() {
     }
   };
 
-  const handleJoinQueue = () => {
+  const handleJoinQueue = async () => {
     setInQueue(true);
     useChatStore.getState().setQueueing(true);
+
+    if (currentMode === 'QUEUE' && user) {
+      const channel = supabase.channel('campus-queue', {
+        config: { presence: { key: user.id } }
+      });
+
+      queueChannelRef.current = channel;
+
+      channel.subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({ joined_at: new Date().toISOString() });
+        }
+      });
+    }
   };
 
   return (
