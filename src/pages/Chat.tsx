@@ -13,13 +13,15 @@ export default function Chat() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const { currentMode } = useAppStore();
-  const { roomId, peerId, messages, pastPartners, extended, peerExtended, setRoom, addMessage, addPastPartner, setExtended, setPeerExtended, resetChat } = useChatStore();
+  const { roomId, peerId, messages, extended, peerExtended, setRoom, addMessage, addPastPartner, setExtended, setPeerExtended, resetChat } = useChatStore();
 
   const [input, setInput] = useState('');
   const [timeLeft, setTimeLeft] = useState(120);
   const [statusText, setStatusText] = useState('A conectar à fila...');
   const [icebreaker, setIcebreaker] = useState('Qual foi a cadeira mais difícil que já tiveste?');
   const [reporting, setReporting] = useState(false);
+  const [isReadOnly, setIsReadOnly] = useState(false);
+  const [readOnlyReason, setReadOnlyReason] = useState<'DISCONNECT' | 'TIMEOUT' | null>(null);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
   const queueChannelRef = useRef<RealtimeChannel | null>(null);
@@ -51,46 +53,39 @@ export default function Chat() {
 
       setStatusText('A aguardar pelo próximo colega...');
 
-      const queueChannel = supabase.channel('campus-queue', {
-        config: { presence: { key: user.id } }
-      });
-      queueChannelRef.current = queueChannel;
+      if (getSecondsUntil('22:48:00') === 0 && getSecondsUntil('22:50:00') > 0) {
+        setStatusText('Já não são permitidas novas conversas hoje.');
+        return;
+      }
 
-      queueChannel.on('presence', { event: 'sync' }, () => {
-        if (getSecondsUntil('22:48:00') === 0 && getSecondsUntil('22:50:00') > 0) {
-          setStatusText('Já não são permitidas novas conversas hoje.');
-          return;
-        }
+      const { data, error } = await supabase.rpc('find_or_join_match');
 
-        const state = queueChannel.presenceState();
-        const usersInQueue = Object.keys(state).sort();
+      if (error) {
+        console.error('Matchmaking error:', error);
+        setStatusText('Erro ao conectar à fila.');
+        return;
+      }
 
-        const myIndex = usersInQueue.indexOf(user.id);
-
-        if (myIndex !== -1) {
-          let matchedPeer: string | null = null;
-
-          if (myIndex % 2 === 0 && myIndex + 1 < usersInQueue.length) {
-            matchedPeer = usersInQueue[myIndex + 1];
-          } else if (myIndex % 2 !== 0) {
-            matchedPeer = usersInQueue[myIndex - 1];
-          }
-
-          if (matchedPeer && !pastPartners.includes(matchedPeer)) {
-            if (myIndex % 2 === 0) {
-              void joinRoom(user.id, matchedPeer);
-            } else {
-              void joinRoom(matchedPeer, user.id);
+      if (data && data.status === 'matched') {
+        void joinRoom(data.room_id, data.peer_id);
+      } else {
+        // Status 'waiting'
+        const queueChannel = supabase.channel('active-rooms-watcher')
+          .on('postgres_changes', {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'active_rooms',
+          }, (payload) => {
+            const { id, user_a, user_b } = payload.new;
+            if (user_a === user.id || user_b === user.id) {
+              const matchedPeer = user_a === user.id ? user_b : user_a;
+              void joinRoom(id, matchedPeer);
             }
-          }
-        }
-      });
+          })
+          .subscribe();
 
-      queueChannel.subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          await queueChannel.track({ joined_at: new Date().toISOString() });
-        }
-      });
+        queueChannelRef.current = queueChannel;
+      }
     };
 
     initMatchmaking();
@@ -101,14 +96,15 @@ export default function Chat() {
     };
   }, [currentMode, user, roomId]);
 
-  const joinRoom = async (id1: string, id2: string) => {
+  const joinRoom = async (newRoomId: string, matchedPeer: string) => {
     if (queueChannelRef.current) {
-      await queueChannelRef.current.untrack();
+      if (typeof queueChannelRef.current.untrack === 'function') {
+        try { await queueChannelRef.current.untrack(); } catch (e) {}
+      }
       supabase.removeChannel(queueChannelRef.current);
     }
 
-    const newRoomId = `room_${[id1, id2].sort().join('_')}`;
-    const newPeerId = id1 === user?.id ? id2 : id1;
+    const newPeerId = matchedPeer;
 
     setRoom(newRoomId, newPeerId);
     addPastPartner(newPeerId);
@@ -153,17 +149,26 @@ export default function Chat() {
   };
 
   useEffect(() => {
-    if (!roomId) return;
+    if (!roomId || isReadOnly) return;
 
     const interval = setInterval(() => {
       setTimeLeft((prev) => {
-        if (prev <= 0) return 0;
+        if (prev <= 1) {
+          clearInterval(interval);
+          handleTimeOut();
+          return 0;
+        }
         return prev - 1;
       });
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [roomId]);
+  }, [roomId, isReadOnly]);
+
+  const handleTimeOut = () => {
+    setIsReadOnly(true);
+    setReadOnlyReason('TIMEOUT');
+  };
 
   useEffect(() => {
     if (extended && peerExtended && timeLeft === 0) {
@@ -173,16 +178,17 @@ export default function Chat() {
     }
   }, [extended, peerExtended, timeLeft]);
 
+  const currentTime = useAppStore(state => state.currentTime);
   useEffect(() => {
     const secondsToClose = getSecondsUntil('22:50:00');
     if (secondsToClose === 0) {
       handleLeave(true);
     }
-  }, [useAppStore(state => state.currentTime)]);
+  }, [currentTime]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || !channelRef.current || !user) return;
+    if (!input.trim() || !channelRef.current || !user || !roomId) return;
 
     const msg: ChatMessage = {
       id: crypto.randomUUID(),
@@ -192,13 +198,12 @@ export default function Chat() {
     };
 
     addMessage(msg);
-    await channelRef.current.send({
-      type: 'broadcast',
-      event: 'message',
-      payload: msg
-    });
-
     setInput('');
+
+    // Send via Edge Function for Redis Buffer
+    await supabase.functions.invoke('send-message', {
+      body: { roomId, message: msg }
+    });
   };
 
   const handleExtend = async () => {
@@ -225,19 +230,16 @@ export default function Chat() {
   };
 
   const handlePeerLeft = () => {
-    resetChat();
-    setStatusText('O colega saiu. A aguardar novo par...');
+    setIsReadOnly(true);
+    setReadOnlyReason('DISCONNECT');
   };
 
   const handleReport = async () => {
     if (!roomId || !peerId || !user) return;
     setReporting(true);
 
-    await supabase.from('reported_chats').insert({
-      room_id: roomId,
-      reporter_id: user.id,
-      reported_id: peerId,
-      transcript: messages
+    await supabase.functions.invoke('report-room', {
+      body: { roomId, reportedId: peerId }
     });
 
     handleLeave(true);
@@ -294,7 +296,27 @@ export default function Chat() {
       </div>
 
       <footer className="p-4 bg-slate-800 border-t border-slate-700 pb-safe">
-        {isTimeUp ? (
+        {isReadOnly ? (
+          <div className="space-y-3">
+            <div className="w-full text-center text-sm font-medium bg-slate-900/50 text-slate-300 py-2 rounded-lg border border-slate-700/50">
+              {readOnlyReason === 'DISCONNECT' ? 'O colega desconectou-se da conversa.' : 'O tempo da conversa terminou.'}
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => handleLeave(true)}
+                className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-medium transition-colors text-sm"
+              >
+                Sair para o Lobby
+              </button>
+              <button
+                onClick={() => { resetChat(); useChatStore.getState().setQueueing(true); }}
+                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-medium transition-colors text-sm"
+              >
+                Novo Chat
+              </button>
+            </div>
+          </div>
+        ) : isTimeUp ? (
           <div className="flex gap-3">
             <button
               onClick={() => handleLeave()}
@@ -317,11 +339,12 @@ export default function Chat() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Escreve uma mensagem..."
-              className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isReadOnly}
+              className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
             />
             <button
               type="submit"
-              disabled={!input.trim()}
+              disabled={!input.trim() || isReadOnly}
               className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl px-4 flex items-center justify-center transition-colors"
             >
               <Send className="w-5 h-5" />
