@@ -62,7 +62,7 @@ export default function Login() {
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-8">
       <div className="text-center space-y-2">
-        <h1 className="text-4xl font-bold text-white tracking-tighter">CAMPUS DROPS</h1>
+        <h1 className="text-4xl font-bold text-white tracking-tighter">UNIDER</h1>
         <p className="text-slate-400 text-sm">Conversas efémeras. Exclusivo UC.</p>
       </div>
 
@@ -145,6 +145,12 @@ export default function Login() {
           </form>
         )}
       </div>
+
+      <footer className="w-full max-w-sm mt-auto pt-8 pb-4 text-center">
+        <p className="text-[10px] text-slate-500 leading-tight">
+          O UNIDER é um projeto independente desenvolvido por estudantes e não possui qualquer afiliação, vínculo institucional, endosso ou suporte oficial por parte da Universidade de Coimbra.
+        </p>
+      </footer>
     </div>
   );
 }

@@ -5,7 +5,9 @@ import { useAuthStore } from '../store/authStore';
 import { useChatStore } from '../store/chatStore';
 import { supabase } from '../lib/supabase';
 import { getSecondsUntil, formatTimeCountdown } from '../utils/time';
-import { LogOut, Clock, Send, Users } from 'lucide-react';
+import { LogOut, Clock, Send, Users, Settings } from 'lucide-react';
+import TermsModal from './TermsModal';
+import SettingsModal from './SettingsModal';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 export default function Lobby() {
@@ -19,6 +21,28 @@ export default function Lobby() {
 
   const [countdown, setCountdown] = useState<number>(0);
   const [inQueue, setInQueue] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [needsTerms, setNeedsTerms] = useState(false);
+  const [loadingTerms, setLoadingTerms] = useState(true);
+
+  useEffect(() => {
+    const checkTerms = async () => {
+      if (!user) return;
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('terms_version')
+        .eq('id', user.id)
+        .single();
+
+      if (!error && data) {
+        if (data.terms_version !== '1.0') {
+          setNeedsTerms(true);
+        }
+      }
+      setLoadingTerms(false);
+    };
+    checkTerms();
+  }, [user]);
   const queueChannelRef = useRef<RealtimeChannel | null>(null);
 
   useEffect(() => {
@@ -88,12 +112,23 @@ export default function Lobby() {
   };
 
   return (
-    <div className="flex-1 flex flex-col items-center p-6 space-y-8">
+    <div className="flex-1 flex flex-col items-center p-6 space-y-8 relative">
+      {!loadingTerms && needsTerms && (
+        <TermsModal onAccept={() => setNeedsTerms(false)} />
+      )}
+      {showSettings && (
+        <SettingsModal onClose={() => setShowSettings(false)} />
+      )}
       <header className="w-full flex justify-between items-center py-2">
-        <h1 className="text-xl font-bold tracking-tight">CAMPUS DROPS</h1>
-        <button onClick={signOut} className="p-2 text-slate-400 hover:text-white transition-colors">
-          <LogOut className="w-5 h-5" />
-        </button>
+        <h1 className="text-xl font-bold tracking-tight">UNIDER</h1>
+        <div className="flex gap-2">
+          <button onClick={() => setShowSettings(true)} className="p-2 text-slate-400 hover:text-white transition-colors">
+            <Settings className="w-5 h-5" />
+          </button>
+          <button onClick={signOut} className="p-2 text-slate-400 hover:text-white transition-colors">
+            <LogOut className="w-5 h-5" />
+          </button>
+        </div>
       </header>
 
       <div className="flex-1 w-full max-w-sm flex flex-col justify-center space-y-12">
@@ -167,6 +202,12 @@ export default function Lobby() {
         )}
 
       </div>
+
+      <footer className="w-full max-w-sm mt-auto pt-8 pb-4 text-center">
+        <p className="text-[10px] text-slate-500 leading-tight">
+          O UNIDER é um projeto independente desenvolvido por estudantes e não possui qualquer afiliação, vínculo institucional, endosso ou suporte oficial por parte da Universidade de Coimbra.
+        </p>
+      </footer>
     </div>
   );
 }
