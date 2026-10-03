@@ -34,11 +34,7 @@ export default function Lobby() {
         .eq('id', user.id)
         .single();
 
-      if (!error && data) {
-        if (data.terms_version !== '1.0') {
-          setNeedsTerms(true);
-        }
-      }
+      setNeedsTerms(Boolean(error) || !data || data.terms_version !== '1.1');
       setLoadingTerms(false);
     };
     checkTerms();
@@ -93,6 +89,7 @@ export default function Lobby() {
   };
 
   const handleJoinQueue = async () => {
+    if (loadingTerms || needsTerms) return;
     setInQueue(true);
     useChatStore.getState().setQueueing(true);
 
@@ -185,6 +182,7 @@ export default function Lobby() {
             {!inQueue ? (
               <button
                 onClick={handleJoinQueue}
+                disabled={loadingTerms || needsTerms}
                 className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl px-4 py-4 font-semibold text-lg transition-all animate-pulse shadow-[0_0_20px_rgba(37,99,235,0.3)]"
               >
                 <Users className="w-5 h-5" />

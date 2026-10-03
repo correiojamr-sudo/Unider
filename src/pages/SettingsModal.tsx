@@ -62,7 +62,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
                 Ação Irreversível
               </div>
               <p className="text-sm text-red-200/70">
-                Esta ação irá apagar permanentemente a tua conta e remover todos os teus dados da plataforma (Right to be Forgotten). Queres mesmo continuar?
+                Esta ação irá apagar permanentemente a tua conta e o perfil. As referências ao perfil nas denúncias são removidas, mas o texto e registos antigos podem conter informações pessoais durante 30 dias, até à limpeza periódica. Identificadores de participação mantêm-se até à limpeza, um dia após o fim da sessão, para permitir denúncias. O buffer e os metadados de envio expiram em 5 e 10 minutos sem novas mensagens, respetivamente. Queres continuar?
               </p>
             </div>
             <div className="flex gap-3">

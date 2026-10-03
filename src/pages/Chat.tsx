@@ -1,355 +1,184 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuthStore } from '../store/authStore';
-import { useAppStore } from '../store/appStore';
-import { useChatStore } from "../store/chatStore";
-import type { ChatMessage } from '../store/chatStore';
-import { supabase } from '../lib/supabase';
-import { getSecondsUntil, formatTimeCountdown } from '../utils/time';
 import { ShieldAlert, Send } from 'lucide-react';
-import { RealtimeChannel } from '@supabase/supabase-js';
+import { useAuthStore } from '../store/authStore';
+import { useChatStore } from '../store/chatStore';
+import type { ChatMessage } from '../store/chatStore';
+import { useChatSession } from '../hooks/useChatSession';
+import { supabase } from '../lib/supabase';
+import { formatTimeCountdown } from '../utils/time';
 
 export default function Chat() {
   const navigate = useNavigate();
-  const { user } = useAuthStore();
-  const { currentMode } = useAppStore();
-  const { roomId, peerId, messages, extended, peerExtended, setRoom, addMessage, addPastPartner, setExtended, setPeerExtended, resetChat } = useChatStore();
-
+  const user = useAuthStore(s => s.user);
+  const { roomId, peerId, messages, isQueueing } = useChatStore();
+  const { room, status, error: sessionError, timeLeft, phase, fresh, applyRoom } = useChatSession();
   const [input, setInput] = useState('');
-  const [timeLeft, setTimeLeft] = useState(120);
-  const [statusText, setStatusText] = useState('A conectar à fila...');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [connected, setConnected] = useState(false);
   const [icebreaker, setIcebreaker] = useState('Qual foi a cadeira mais difícil que já tiveste?');
-  const [reporting, setReporting] = useState(false);
-  const [isReadOnly, setIsReadOnly] = useState(false);
-  const [readOnlyReason, setReadOnlyReason] = useState<'DISCONNECT' | 'TIMEOUT' | null>(null);
+  const pending = useRef<{ id: string; text: string; roomId: string } | null>(null);
+  const endRef = useRef<HTMLDivElement>(null);
 
-  const channelRef = useRef<RealtimeChannel | null>(null);
-  const queueChannelRef = useRef<RealtimeChannel | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  useEffect(() => { setInput(''); setError(''); setBusy(false); pending.current = null; }, [roomId]);
+  useEffect(() => {
+    if (!user) navigate('/login');
+  }, [user, navigate]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  // Matchmaking & Ephemeral Resilience
-  useEffect(() => {
-    if (currentMode !== 'ACTIVE' || !user) {
-      navigate('/lobby');
-      return;
-    }
-
-    const storeState = useChatStore.getState();
-
-    if (!storeState.roomId && !storeState.isQueueing) {
-      navigate('/lobby');
-      return;
-    }
-
-    const initMatchmaking = async () => {
-      if (storeState.roomId) {
-        setupRoomChannel(storeState.roomId);
-        return;
-      }
-
-      setStatusText('A aguardar pelo próximo colega...');
-
-      if (getSecondsUntil('22:48:00') === 0 && getSecondsUntil('22:50:00') > 0) {
-        setStatusText('Já não são permitidas novas conversas hoje.');
-        return;
-      }
-
-      const { data, error } = await supabase.rpc('find_or_join_match');
-
-      if (error) {
-        console.error('Matchmaking error:', error);
-        setStatusText('Erro ao conectar à fila.');
-        return;
-      }
-
-      if (data && data.status === 'matched') {
-        void joinRoom(data.room_id, data.peer_id);
-      } else {
-        // Status 'waiting'
-        const queueChannel = supabase.channel('active-rooms-watcher')
-          .on('postgres_changes', {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'active_rooms',
-          }, (payload) => {
-            const { id, user_a, user_b } = payload.new;
-            if (user_a === user.id || user_b === user.id) {
-              const matchedPeer = user_a === user.id ? user_b : user_a;
-              void joinRoom(id, matchedPeer);
-            }
-          })
-          .subscribe();
-
-        queueChannelRef.current = queueChannel;
-      }
-    };
-
-    initMatchmaking();
-
-    return () => {
-      if (queueChannelRef.current) supabase.removeChannel(queueChannelRef.current);
-      if (channelRef.current) supabase.removeChannel(channelRef.current);
-    };
-  }, [currentMode, user, roomId]);
-
-  const joinRoom = async (newRoomId: string, matchedPeer: string) => {
-    if (queueChannelRef.current) {
-      if (typeof queueChannelRef.current.untrack === 'function') {
-        try { await queueChannelRef.current.untrack(); } catch (e) {}
-      }
-      supabase.removeChannel(queueChannelRef.current);
-    }
-
-    const newPeerId = matchedPeer;
-
-    setRoom(newRoomId, newPeerId);
-    addPastPartner(newPeerId);
-    setupRoomChannel(newRoomId);
-    setTimeLeft(120);
-
-    supabase.from('icebreaker_suggestions')
-      .select('suggestion')
-      .eq('is_approved', true)
-      .limit(100)
+    setConnected(false);
+    if (!roomId || !user || !peerId) return;
+    let cancelled = false;
+    const channel = supabase.channel(`room:${roomId}`, { config: { private: true } })
+      .on('broadcast', { event: 'message' }, ({ payload }) => {
+        if (cancelled || useChatStore.getState().roomId !== roomId) return;
+        // Only service-role can publish. Still reject malformed/stale payloads.
+        if (typeof payload?.id !== 'string' || typeof payload?.text !== 'string'
+          || typeof payload?.timestamp !== 'string'
+          || ![user.id, peerId].includes(payload.sender_id)) return;
+        useChatStore.getState().addMessage(payload as ChatMessage);
+      });
+    void supabase.realtime.setAuth().then(() => {
+      if (!cancelled) channel.subscribe(result => {
+        if (!cancelled) setConnected(result === 'SUBSCRIBED');
+      });
+    }).catch(() => { if (!cancelled) setError('Não foi possível ligar ao canal privado.'); });
+    void supabase.from('icebreaker_suggestions').select('suggestion').eq('is_approved', true).limit(100)
       .then(({ data }) => {
-        if (data && data.length > 0) {
-          const randomIndex = Math.floor(Math.random() * data.length);
-          setIcebreaker(data[randomIndex].suggestion);
-        }
+        if (!cancelled && data?.length) setIcebreaker(data[Math.floor(Math.random() * data.length)].suggestion);
       });
+    return () => { cancelled = true; void supabase.removeChannel(channel); };
+  }, [roomId, peerId, user]);
+
+  const leave = async (next: boolean) => {
+    if (busy) return;
+    setBusy(true); setError('');
+    try {
+      const { error: rpcError } = roomId
+        ? await supabase.rpc('leave_room', { p_room: roomId })
+        : await supabase.rpc('leave_matchmaking');
+      if (rpcError) throw rpcError;
+      useChatStore.getState().resetChat();
+      if (next) useChatStore.getState().setQueueing(true);
+      else navigate('/lobby');
+    } catch { setError('Não foi possível terminar a conversa. Tenta novamente.'); }
+    finally { setBusy(false); }
   };
 
-  const setupRoomChannel = (currentRoomId: string) => {
-    if (channelRef.current) supabase.removeChannel(channelRef.current);
-
-    const roomChannel = supabase.channel(currentRoomId);
-
-    roomChannel.on('broadcast', { event: 'message' }, ({ payload }) => {
-      addMessage(payload as ChatMessage);
-    });
-
-    roomChannel.on('broadcast', { event: 'action' }, ({ payload }) => {
-      if (payload.type === 'EXTEND') {
-        setPeerExtended(true);
-      } else if (payload.type === 'LEAVE') {
-        handlePeerLeft();
-      }
-    });
-
-    roomChannel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        setStatusText('');
-      }
-    });
-    channelRef.current = roomChannel;
-  };
-
-  useEffect(() => {
-    if (!roomId || isReadOnly) return;
-
-    const interval = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          handleTimeOut();
-          return 0;
-        }
-        return prev - 1;
+  const send = async (event: FormEvent) => {
+    event.preventDefault();
+    const text = input.trim();
+    if (!roomId || !text || busy || phase !== 'active' || !fresh || !connected) return;
+    if (!pending.current || pending.current.text !== text || pending.current.roomId !== roomId) {
+      pending.current = { id: crypto.randomUUID(), text, roomId };
+    }
+    const message = pending.current;
+    setBusy(true); setError('');
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke('send-message', {
+        body: { roomId, message: { id: message.id, text } },
       });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [roomId, isReadOnly]);
-
-  const handleTimeOut = () => {
-    setIsReadOnly(true);
-    setReadOnlyReason('TIMEOUT');
+      if (useChatStore.getState().roomId !== roomId) return;
+      if (invokeError || !data?.success || !data.message) throw invokeError || new Error('No confirmation');
+      useChatStore.getState().addMessage(data.message as ChatMessage);
+      setInput(''); pending.current = null;
+    } catch {
+      if (useChatStore.getState().roomId === roomId) setError('Envio não confirmado. Tenta novamente; a mensagem não será duplicada.');
+    } finally { if (useChatStore.getState().roomId === roomId) setBusy(false); }
   };
 
-  useEffect(() => {
-    if (extended && peerExtended && timeLeft === 0) {
-      setTimeLeft(180);
-      setExtended(false);
-      setPeerExtended(false);
-    }
-  }, [extended, peerExtended, timeLeft]);
-
-  const currentTime = useAppStore(state => state.currentTime);
-  useEffect(() => {
-    const secondsToClose = getSecondsUntil('22:50:00');
-    if (secondsToClose === 0) {
-      handleLeave(true);
-    }
-  }, [currentTime]);
-
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || !channelRef.current || !user || !roomId) return;
-
-    const msg: ChatMessage = {
-      id: crypto.randomUUID(),
-      sender_id: user.id,
-      text: input.trim(),
-      timestamp: new Date().toISOString()
-    };
-
-    addMessage(msg);
-    setInput('');
-
-    // Send via Edge Function for Redis Buffer
-    await supabase.functions.invoke('send-message', {
-      body: { roomId, message: msg }
-    });
+  const extend = async () => {
+    if (!roomId || busy || !fresh) return;
+    setBusy(true); setError('');
+    try {
+      const { data, error: rpcError } = await supabase.rpc('extend_room', { p_room: roomId });
+      if (rpcError) throw rpcError;
+      if (useChatStore.getState().roomId === roomId) applyRoom(data);
+    } catch { setError('Não foi possível prolongar a conversa.'); }
+    finally { setBusy(false); }
   };
 
-  const handleExtend = async () => {
-    setExtended(true);
-    if (channelRef.current) {
-      await channelRef.current.send({
-        type: 'broadcast',
-        event: 'action',
-        payload: { type: 'EXTEND' }
-      });
-    }
+  const report = async () => {
+    if (!roomId || busy) return;
+    setBusy(true); setError('');
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke('report-room', { body: { roomId } });
+      if (invokeError || !data?.success) throw invokeError || new Error('No confirmation');
+      // Stay here on failure, preserving the room and the ability to retry.
+      useChatStore.getState().resetChat();
+      navigate('/lobby');
+    } catch { setError('Denúncia não guardada. A conversa foi suspensa; tenta novamente.'); }
+    finally { setBusy(false); }
   };
 
-  const handleLeave = async (force = false) => {
-    if (channelRef.current) {
-      await channelRef.current.send({
-        type: 'broadcast',
-        event: 'action',
-        payload: { type: 'LEAVE' }
-      });
-    }
-    resetChat();
-    if (force) navigate('/lobby');
-  };
-
-  const handlePeerLeft = () => {
-    setIsReadOnly(true);
-    setReadOnlyReason('DISCONNECT');
-  };
-
-  const handleReport = async () => {
-    if (!roomId || !peerId || !user) return;
-    setReporting(true);
-
-    await supabase.functions.invoke('report-room', {
-      body: { roomId, reportedId: peerId }
-    });
-
-    handleLeave(true);
-  };
-
-  if (!roomId) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-4">
-        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4 mx-auto"></div>
-        <p className="text-slate-400">{statusText}</p>
-      </div>
-    );
-  }
-
-  const isTimeUp = timeLeft === 0;
-  const isCloseToEndingGlobal = getSecondsUntil('22:50:00') <= 60;
-  const showWarning = (timeLeft <= 60 && timeLeft > 0) || isCloseToEndingGlobal;
+  if (!roomId) return (
+    <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-4">
+      {isQueueing && <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />}
+      <p className="text-slate-400">{status}</p>
+      {(error || sessionError) && <p role="alert" className="text-red-300">{error || sessionError}</p>}
+      <button disabled={busy} onClick={() => void leave(false)} className="bg-slate-700 rounded-xl p-3">Voltar ao Lobby</button>
+    </div>
+  );
 
   return (
     <div className="flex-1 flex flex-col h-[100dvh]">
-      <header className="bg-slate-800 border-b border-slate-700 p-4 flex flex-col gap-3 relative z-10">
+      <header className="bg-slate-800 border-b border-slate-700 p-4 space-y-3">
         <div className="flex justify-between items-center">
-          <div className={`font-mono text-xl font-bold ${showWarning ? 'text-red-400 animate-pulse' : 'text-blue-400'}`}>
+          <div className={`font-mono text-xl font-bold ${timeLeft <= 60 ? 'text-red-400' : 'text-blue-400'}`}>
             {formatTimeCountdown(timeLeft)}
           </div>
-          <button
-            onClick={handleReport}
-            disabled={reporting}
-            className="flex items-center gap-2 text-xs font-medium text-red-400 hover:text-red-300 bg-red-400/10 hover:bg-red-400/20 px-3 py-1.5 rounded-full transition-colors"
-          >
-            <ShieldAlert className="w-4 h-4" />
-            Denunciar
+          <button onClick={() => void report()} disabled={busy} className="flex items-center gap-2 text-sm text-red-400">
+            <ShieldAlert className="w-4 h-4" />{busy ? 'A processar...' : 'Denunciar'}
           </button>
         </div>
-
-        <div className="bg-slate-700/50 p-3 rounded-lg text-sm text-center italic text-slate-300">
-          "{icebreaker}"
-        </div>
+        <p className="bg-slate-700/50 p-3 rounded-lg text-sm text-center italic">{icebreaker}</p>
       </header>
-
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 flex flex-col bg-slate-900">
-        {messages.map((msg) => {
-          const isMe = msg.sender_id === user?.id;
+      <main className="flex-1 overflow-y-auto p-4 space-y-4 flex flex-col bg-slate-900">
+        {messages.map(message => {
+          const mine = message.sender_id === user?.id;
           return (
-            <div key={msg.id} className={`flex flex-col max-w-[80%] ${isMe ? 'self-end items-end' : 'self-start items-start'}`}>
-              <span className="text-[10px] text-slate-500 mb-1 px-1">{isMe ? 'Tu' : 'Colega'}</span>
-              <div className={`px-4 py-2 rounded-2xl ${isMe ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-slate-800 text-slate-200 rounded-tl-sm'}`}>
-                {msg.text}
-              </div>
+            <div key={message.id} className={`flex flex-col max-w-[80%] ${mine ? 'self-end items-end' : 'self-start items-start'}`}>
+              <span className="text-[10px] text-slate-500 mb-1">{mine ? 'Tu' : 'Colega'}</span>
+              <div className={`px-4 py-2 rounded-2xl break-words ${mine ? 'bg-blue-600' : 'bg-slate-800'}`}>{message.text}</div>
             </div>
           );
         })}
-        <div ref={messagesEndRef} />
-      </div>
-
-      <footer className="p-4 bg-slate-800 border-t border-slate-700 pb-safe">
-        {isReadOnly ? (
+        <div ref={endRef} />
+      </main>
+      <footer className="p-4 bg-slate-800 border-t border-slate-700 pb-safe space-y-3">
+        {(error || sessionError) && <p role="alert" className="text-sm text-red-300">{error || sessionError}</p>}
+        {phase === 'decision' ? (
           <div className="space-y-3">
-            <div className="w-full text-center text-sm font-medium bg-slate-900/50 text-slate-300 py-2 rounded-lg border border-slate-700/50">
-              {readOnlyReason === 'DISCONNECT' ? 'O colega desconectou-se da conversa.' : 'O tempo da conversa terminou.'}
-            </div>
+            <p className="text-center text-sm text-slate-300">O tempo terminou. Tens 30 segundos para decidir.</p>
             <div className="flex gap-3">
-              <button
-                onClick={() => handleLeave(true)}
-                className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-medium transition-colors text-sm"
-              >
-                Sair para o Lobby
-              </button>
-              <button
-                onClick={() => { resetChat(); useChatStore.getState().setQueueing(true); }}
-                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-medium transition-colors text-sm"
-              >
-                Novo Chat
+              <button disabled={busy} onClick={() => void leave(true)} className="flex-1 bg-slate-700 p-3 rounded-xl">Passar</button>
+              <button disabled={busy || !fresh || room?.extended} onClick={() => void extend()} className="flex-1 bg-blue-600 disabled:opacity-50 p-3 rounded-xl">
+                {room?.extended ? 'A aguardar colega...' : 'Continuar (+3 min)'}
               </button>
             </div>
           </div>
-        ) : isTimeUp ? (
-          <div className="flex gap-3">
-            <button
-              onClick={() => handleLeave()}
-              className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-medium transition-colors"
-            >
-              Passar
-            </button>
-            <button
-              onClick={handleExtend}
-              disabled={extended}
-              className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900 disabled:text-blue-300 text-white py-3 rounded-xl font-medium transition-colors"
-            >
-              {extended ? (peerExtended ? 'A prolongar...' : 'A aguardar colega...') : 'Continuar (+3 min)'}
-            </button>
+        ) : phase === 'closed' ? (
+          <div className="space-y-3">
+            <p className="text-center text-sm">{room?.end_reason === 'disconnect' ? 'O colega desconectou-se.' : 'A conversa terminou.'}</p>
+            <div className="flex gap-3">
+              <button disabled={busy} onClick={() => void leave(false)} className="flex-1 bg-slate-700 p-3 rounded-xl">Sair para o Lobby</button>
+              <button disabled={busy} onClick={() => void leave(true)} className="flex-1 bg-blue-600 p-3 rounded-xl">Novo Chat</button>
+            </div>
           </div>
         ) : (
-          <form onSubmit={handleSendMessage} className="flex gap-2">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Escreve uma mensagem..."
-              disabled={isReadOnly}
-              className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-            />
-            <button
-              type="submit"
-              disabled={!input.trim() || isReadOnly}
-              className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl px-4 flex items-center justify-center transition-colors"
-            >
-              <Send className="w-5 h-5" />
-            </button>
-          </form>
+          <>
+            {(!connected || !fresh) && <p className="text-sm text-slate-400">A confirmar a ligação...</p>}
+            <form onSubmit={event => void send(event)} className="flex gap-2">
+              <input value={input} onChange={event => setInput(event.target.value)} maxLength={2000}
+                disabled={busy || phase !== 'active' || !fresh || !connected} placeholder="Escreve uma mensagem..."
+                className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm disabled:opacity-50" />
+              <button type="submit" disabled={busy || !input.trim() || phase !== 'active' || !fresh || !connected}
+                className="bg-blue-600 disabled:opacity-50 rounded-xl px-4"><Send className="w-5 h-5" /></button>
+            </form>
+          </>
         )}
       </footer>
     </div>

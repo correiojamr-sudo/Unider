@@ -9,6 +9,8 @@ export interface ChatMessage {
 }
 
 interface ChatState {
+  ownerId: string | null;
+  setOwner: (ownerId: string) => void;
   roomId: string | null;
   peerId: string | null;
   messages: ChatMessage[];
@@ -28,6 +30,11 @@ interface ChatState {
 export const useChatStore = create<ChatState>()(
   persist(
     (set) => ({
+      ownerId: null,
+      setOwner: (ownerId) => set(state => state.ownerId === ownerId ? {} : ({
+        ownerId, roomId: null, peerId: null, messages: [], pastPartners: [],
+        extended: false, peerExtended: false, isQueueing: false,
+      })),
       roomId: null,
       peerId: null,
       messages: [],
@@ -36,8 +43,9 @@ export const useChatStore = create<ChatState>()(
       peerExtended: false,
       isQueueing: false,
       setQueueing: (val) => set({ isQueueing: val }),
-      setRoom: (roomId, peerId) => set({ roomId, peerId, isQueueing: false }),
-      addMessage: (msg) => set((state) => ({ messages: [...state.messages, msg] })),
+      setRoom: (roomId, peerId) => set((state) => ({ roomId, peerId, isQueueing: false,
+        messages: state.roomId === roomId ? state.messages : [], extended: false, peerExtended: false })),
+      addMessage: (msg) => set((state) => ({ messages: state.messages.some(m => m.id === msg.id) ? state.messages : [...state.messages, msg] })),
       addPastPartner: (partnerId) => set((state) => ({ pastPartners: [...state.pastPartners, partnerId] })),
       setExtended: (val) => set({ extended: val }),
       setPeerExtended: (val) => set({ peerExtended: val }),
