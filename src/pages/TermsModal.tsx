@@ -13,18 +13,12 @@ export default function TermsModal({ onAccept }: { onAccept: () => void }) {
     setLoading(true);
     setError('');
 
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .update({
-        terms_accepted_at: new Date().toISOString(),
-        terms_version: '1.0'
-      })
-      .eq('id', user.id);
+    const { data, error: updateError } = await supabase.rpc('accept_terms', { p_version: '1.1' });
 
     setLoading(false);
 
-    if (updateError) {
-      setError(updateError.message);
+    if (updateError || data !== true) {
+      setError(updateError?.message || 'Não foi possível guardar o consentimento.');
     } else {
       onAccept();
     }
@@ -55,10 +49,10 @@ export default function TermsModal({ onAccept }: { onAccept: () => void }) {
             <strong>1. Confidencialidade e Efemeridade:</strong> As conversas são desenhadas para ser efémeras e eliminadas da memória. No entanto, o sistema permite denunciar mensagens.
           </p>
           <p>
-            <strong>2. Política de Denúncia e Auditoria:</strong> Em caso de denúncia fundamentada de assédio, ameaças ou conduta ilícita, o registo integral da conversa é preservado na base de dados para auditoria interna e eventual encaminhamento às autoridades (PJ / MP) mediante ordem legal.
+            <strong>2. Política de Denúncia e Auditoria:</strong> As mensagens são mantidas num buffer temporário que expira após 5 minutos sem novas mensagens. Uma denúncia guarda as mensagens disponíveis para auditoria interna. Os registos de denúncia são removidos automaticamente após 30 dias, na execução seguinte da limpeza periódica.
           </p>
           <p>
-            <strong>3. Direito ao Esquecimento (GDPR):</strong> Podes, a qualquer momento, apagar a tua conta e todos os teus dados associados nas Definições.
+            <strong>3. Eliminação da Conta:</strong> Podes apagar a conta e o perfil nas Definições. As referências ao perfil nas denúncias são removidas, mas o texto e registos antigos podem conter informações pessoais durante o prazo acima. Identificadores de participação na sala mantêm-se até à limpeza, um dia após o fim da sessão, para permitir denúncias. O buffer temporário e os metadados de envio expiram separadamente em 5 e 10 minutos sem novas mensagens, respetivamente.
           </p>
           <p>
             <strong>4. Independência:</strong> O UNIDER é um projeto independente, não possuindo qualquer afiliação ou endosso por parte da Universidade de Coimbra.

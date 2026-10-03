@@ -1,5 +1,11 @@
 # React + TypeScript + Vite
 
+## UNIDER: review fixes
+
+See [deployment and validation notes](docs/review-fixes.md) before releasing the
+security/lifecycle changes. Run `npm test` for regression checks. Cloudflare Pages
+deployment is unchanged; this PR does not change Workers configuration.
+
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
 Currently, two official plugins are available:
