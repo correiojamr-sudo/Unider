@@ -1,5 +1,11 @@
 # Review fixes: deployment and validation
 
+> Historical PR #6 notes. The owner merged this PR for prelaunch testing on
+> 2026-10-03 before completing hosted end-to-end checks. See
+> [current recorded status](project-status.md), [release precautions](operations/release.md)
+> and [hosted test criteria](validation/README.md). The recorded target already has
+> a consolidated bootstrap: do not reapply these migration files blindly.
+
 This PR does not alter Cloudflare Workers. The frontend remains a Cloudflare Pages
 application. No hosted Supabase configuration/database has been changed by this PR.
 
@@ -82,7 +88,9 @@ the hosted Realtime/Upstash configuration. The Edge type-check runs independentl
 
 - With two members and a third authenticated user, prove private room subscribe/read
   succeeds for members and fails for the outsider. Prove member/outsider direct
-  WebSocket **and REST** broadcasts fail; server private REST broadcast succeeds.
+  WebSocket **and REST** broadcasts do not reach the subscribers; server private
+  REST broadcast reaches them as a positive control. HTTP 202 alone does not
+  establish delivery or authorization denial.
 - Exercise real Upstash Lua append/dedup and lock release; retry a failed delivery,
   simultaneous send/report, two reports, and database-insert failure. Evidence must
   remain available for retry and never be overwritten with an empty transcript.
@@ -91,5 +99,7 @@ the hosted Realtime/Upstash configuration. The Edge type-check runs independentl
 - Ban a live participant and delete an account with existing reports. Verify denied
   server operations, successful deletion, retained evidence policy and cron cleanup.
 
-Until these environment checks pass, keep the PR in draft. Applying migrations and
-deploying Functions/Pages is a separate operator action, not something this PR performs.
+Originally these checks were required before taking the PR out of draft. The owner
+later authorized integration for prelaunch testing, not a public launch. Keep
+launch readiness incomplete until the hosted checks pass. Applying migrations and
+deploying Functions/Pages remains a separately authorized operator action.

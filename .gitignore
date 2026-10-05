@@ -22,3 +22,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local configuration: only the placeholder example belongs in Git.
+.env
+.env.*
+!.env.example
+supabase/.temp/
+supabase/.branches/
+
+# Optional coordination state is local; an explicitly enabled marker is trackable.
+.codex/coordination/*
+!.codex/coordination/project.yaml

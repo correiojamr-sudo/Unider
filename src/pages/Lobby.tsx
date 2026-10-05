@@ -6,8 +6,8 @@ import { useChatStore } from '../store/chatStore';
 import { supabase } from '../lib/supabase';
 import { getSecondsUntil, formatTimeCountdown } from '../utils/time';
 import { LogOut, Clock, Send, Users, Settings } from 'lucide-react';
-import TermsModal from './TermsModal';
-import SettingsModal from './SettingsModal';
+import TermsModal from '../components/modals/TermsModal';
+import SettingsModal from '../components/modals/SettingsModal';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 export default function Lobby() {
