@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ShieldAlert, Check } from 'lucide-react';
-import { supabase } from '../lib/supabase';
-import { useAuthStore } from '../store/authStore';
+import { supabase } from '../../lib/supabase';
+import { useAuthStore } from '../../store/authStore';
 
 export default function TermsModal({ onAccept }: { onAccept: () => void }) {
   const { user } = useAuthStore();
