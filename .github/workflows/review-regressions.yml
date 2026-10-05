@@ -32,6 +32,10 @@ jobs:
           UNIDER_TEST_DATABASE_URL: postgresql://postgres:test-only-password@127.0.0.1:5432/unider_review
       - run: npm run lint
       - run: npm run build
+        # Structural fixture only. This dist is never a release artifact.
+        env:
+          VITE_SUPABASE_URL: https://unider-build.invalid
+          VITE_SUPABASE_ANON_KEY: sb_publishable_unider_ci_fixture_only
   edge-types:
     runs-on: ubuntu-latest
     steps:
@@ -39,4 +43,4 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - run: deno check supabase/functions/send-message/index.ts supabase/functions/report-room/index.ts
+      - run: deno check --frozen-lockfile supabase/functions/*/index.ts

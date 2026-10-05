@@ -46,7 +46,8 @@ comandos com `--help`.
 1. Preparar ambiente autorizado de validação, plano de recuperação e, se a
    alteração for incompatível, janela de manutenção acordada.
 2. Aplicar apenas a migration nova/revista correspondente à base confirmada.
-3. Publicar **ambas** as Functions com `_shared`, mantendo verificação JWT e
+3. Publicar as quatro Functions (`send-message`, `report-room`,
+   `get-room-messages` e `get-server-time`) com `_shared`, mantendo verificação JWT e
    configuração Redis coerente.
 4. Validar contrato servidor, permissões privadas e efeitos dos envios.
 5. Publicar Pages correspondente e testar browsers/entrada/ciclo completo.
@@ -55,6 +56,29 @@ comandos com `--help`.
 Não misturar schema novo com frontend/Functions antigos incompatíveis. Para o
 PR #6, a preparação e publicação para testes já foram registadas; a ordem acima
 não é uma instrução para reaplicá-lo hoje.
+
+U04 acrescenta `get-room-messages`, sem migration nem alteração de configuração
+remota. Quando houver autorização específica para publicação, publicar primeiro
+esta Function com os segredos servidor existentes e verificação JWT mantida;
+validar JWT real, recusas e leitura do buffer antes de publicar o frontend U04.
+Um frontend U04 publicado antes da Function apresenta erro de recuperação com
+retry; não recupera por acesso direto ao Redis. A função lê sob o lock comum,
+com autorização `message`; não deve fechar a sala nem renovar TTLs dos dados.
+Validar reconexão real entre duas sessões, broadcasts intercalados, buffer
+expirado, sala fechada/ban/termos e preservação da prova de denúncia. Mocks locais
+não aprovam esses efeitos alojados. Nenhum deploy foi efetuado nesta entrega;
+não reaplicar o bootstrap nem os três SQL históricos para publicar a Function.
+
+U06 acrescenta `get-server-time`, apenas local nesta entrega. Publicá-la antes
+do frontend U06, com JWT ligado; confirmar resposta ISO autenticada, ausência
+de mutações e falha sem sessão. Não precisa de Redis nem de schema novo.
+Sem essa Function ou sem confirmação recente, o frontend conserva a sala/intenção
+mas bloqueia nova entrada e mostra «Horário por confirmar». A amostra da Function
+não substitui hora/prazos PostgreSQL. Publicar Pages exige configuração pública
+válida: o preflight recusa env ausente/URL inválido/chave secreta. O build CI/local
+com fixtures sintéticas não é um artefacto de release. Não abrir inscrições.
+Consultar a [matriz U06](../validation/2026-10-05-integration-readiness.md) antes
+de decidir publicação/testes reais; esta entrega não realizou deploys.
 
 Em falha, impedir novas correspondências pelo mecanismo autorizado e corrigir
 em frente. Não restaurar permissões inseguras, broadcasts cliente ou inserção
