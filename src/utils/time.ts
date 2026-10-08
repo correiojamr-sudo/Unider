@@ -1,33 +1,21 @@
-import { formatInTimeZone } from 'date-fns-tz';
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
 
 const TIMEZONE = 'Europe/Lisbon';
 
-export const getLisbonTime = (): Date => {
-  // Return the date adjusted to represent Lisbon time (removed due to unused import)
-  return new Date();
-};
+export const getLisbonTime = (): Date => new Date();
+export const getLisbonDay = (date: Date): string => formatInTimeZone(date, TIMEZONE, 'yyyy-MM-dd');
+export const getLisbonClock = (date: Date): string => formatInTimeZone(date, TIMEZONE, 'HH:mm:ss');
 
-export const getSecondsUntil = (targetTimeStr: string): number => {
-  const now = new Date();
-  // Get the current time string in Lisbon
-  const currentStr = formatInTimeZone(now, TIMEZONE, 'HH:mm:ss');
-
-  // Parse hours, minutes, seconds
-  const [tHours, tMinutes, tSeconds] = targetTimeStr.split(':').map(Number);
-  const [cHours, cMinutes, cSeconds] = currentStr.split(':').map(Number);
-
-  // Convert both to seconds since start of day
-  const targetSecondsOfDay = tHours * 3600 + tMinutes * 60 + (tSeconds || 0);
-  const currentSecondsOfDay = cHours * 3600 + cMinutes * 60 + cSeconds;
-
-  let diff = targetSecondsOfDay - currentSecondsOfDay;
-
-  // If target time is earlier in the day than current time, it means it's for tomorrow
-  if (diff < 0) {
-    diff += 24 * 3600;
+// Use actual instants so a countdown across a Lisbon DST change is accurate.
+export const getSecondsUntil = (targetTime: string, now = new Date(), nextDay = true): number => {
+  const day = getLisbonDay(now);
+  let target = fromZonedTime(`${day}T${targetTime}`, TIMEZONE);
+  if (target.getTime() < now.getTime() && nextDay) {
+    const tomorrow = new Date(`${day}T12:00:00Z`);
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    target = fromZonedTime(`${tomorrow.toISOString().slice(0, 10)}T${targetTime}`, TIMEZONE);
   }
-
-  return diff;
+  return Math.max(0, Math.ceil((target.getTime() - now.getTime()) / 1000));
 };
 
 export const formatTimeCountdown = (seconds: number): string => {

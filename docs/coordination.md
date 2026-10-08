@@ -12,6 +12,13 @@ em snapshots independentes. Abrir três chats não autoriza três implementaçõ
 simultâneas. A disponibilidade do coordenador é a pedido, sem acompanhamento
 automático ou promessa de que a conclusão de uma área o acorda.
 
+Em 05/10, o proprietário autorizou expressamente a Coordenação a acompanhar e
+prosseguir a sequência U01–U06 durante a execução ativa, sem pedir confirmação
+entre tarefas. Usar esperas por conclusão e intervir em entregas/falhas, evitando
+consultas e mensagens repetidas. A regra de um escritor e a revisão entre tarefas
+mantêm-se. Não criar monitorização em segundo plano nem inferir autorização para
+deploys, contas, emails ou alterações de serviços a partir desta autonomia.
+
 ## Áreas
 
 | Área | Resultado típico | Caminhos habituais, não autorização automática |

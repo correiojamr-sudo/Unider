@@ -1,62 +1,68 @@
-import { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { useEffect, useState } from 'react';
+import { useAuthStore } from '../store/authStore';
+import { useAuthOperation } from '../hooks/useAuthOperation';
+import { normalizeInstitutionalEmail, validEmailOtp, OTP_COOLDOWN_MS } from '../lib/authOperations';
+import { withScopedAuth } from '../lib/authSession';
 import { LogIn, ShieldAlert } from 'lucide-react';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
   const [step, setStep] = useState<'EMAIL' | 'OTP'>('EMAIL');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const operation = useAuthOperation();
+  const { loading } = operation;
+  const [validationError, setValidationError] = useState('');
+  const error = validationError || operation.error;
+  const [destination, setDestination] = useState('');
+  const [resendAt, setResendAt] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+  const cooldown = Math.max(0, Math.min(60, Math.ceil((resendAt - now) / 1000)));
   const [legalAccepted, setLegalAccepted] = useState(false);
+  useEffect(() => {
+    if (!resendAt) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [resendAt]);
 
-  const handleSendOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-
-    if (!email.endsWith('@student.uc.pt')) {
-      setError('Acesso restrito ao domínio @student.uc.pt');
+  const sendOtp = async (resend = false) => {
+    setValidationError('');
+    const address = normalizeInstitutionalEmail(resend ? destination : email);
+    if (!address) {
+      setValidationError('Indica um endereço completo do domínio @student.uc.pt.');
       return;
     }
-
     if (!legalAccepted) {
-      setError('Tem de aceitar os termos de confidencialidade.');
+      setValidationError('Tens de aceitar os termos de confidencialidade.');
       return;
     }
-
-    setLoading(true);
-    const { error: signInError } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        shouldCreateUser: true,
-      },
-    });
-
-    setLoading(false);
-
-    if (signInError) {
-      setError(signInError.message);
-    } else {
+    if (loading || Date.now() < resendAt) return;
+    setNow(Date.now());
+    setResendAt(Date.now() + OTP_COOLDOWN_MS);
+    await operation.run('send', (current, signal) => withScopedAuth(current, signal, async auth => {
+      const result = await auth.signInWithOtp({ email: address, options: { shouldCreateUser: true } });
+      if (result.error) throw result.error;
+      return result;
+    }), () => {
+      setDestination(address);
+      setEmail(address);
+      setOtp('');
       setStep('OTP');
-    }
+    });
   };
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    const { error: verifyError } = await supabase.auth.verifyOtp({
-      email,
-      token: otp,
-      type: 'email',
-    });
-
-    setLoading(false);
-
-    if (verifyError) {
-      setError(verifyError.message);
+    setValidationError('');
+    if (!validEmailOtp(otp)) {
+      setValidationError('Introduz o código completo do email, entre 6 e 10 dígitos.');
+      return;
     }
+    await operation.run('verify', (current, signal) => withScopedAuth(current, signal, async auth => {
+      const result = await auth.verifyOtp({ email: destination, token: otp, type: 'email' });
+      if (result.error) throw result.error;
+      if (!result.data.session) throw new Error('Session not confirmed');
+      return result.data.session;
+    }), session => useAuthStore.getState().setSession(session));
   };
 
   return (
@@ -68,23 +74,23 @@ export default function Login() {
 
       <div className="w-full max-w-sm space-y-6">
         {error && (
-          <div className="p-3 bg-red-950/50 border border-red-900 rounded-lg text-red-200 text-sm flex items-start gap-2">
+          <div role="alert" className="p-3 bg-red-950/50 border border-red-900 rounded-lg text-red-200 text-sm flex items-start gap-2">
             <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
             <p>{error}</p>
           </div>
         )}
 
         {step === 'EMAIL' ? (
-          <form onSubmit={handleSendOtp} className="space-y-4">
+          <form noValidate onSubmit={e => { e.preventDefault(); void sendOtp(); }} className="space-y-4">
             <div className="space-y-1">
               <label htmlFor="email" className="text-xs font-medium text-slate-400 uppercase tracking-wider">Email Institucional</label>
               <input
                 id="email"
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => { operation.clear(); setValidationError(''); setEmail(e.target.value); }}
                 placeholder="nome@student.uc.pt"
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                 required
               />
             </div>
@@ -94,60 +100,71 @@ export default function Login() {
                 <input
                   type="checkbox"
                   checked={legalAccepted}
-                  onChange={(e) => setLegalAccepted(e.target.checked)}
+                  onChange={(e) => { operation.clear(); setValidationError(''); setLegalAccepted(e.target.checked); }}
                   className="w-4 h-4 rounded border-slate-600 text-blue-600 focus:ring-blue-600 bg-slate-700"
                   required
                 />
               </div>
               <div className="text-xs text-slate-400 leading-relaxed">
-                As conversas são confidenciais e efémeras. Em caso de denúncia fundamentada de assédio, ameaças ou conduta ilícita, o registo integral da conversa é preservado na base de dados para auditoria interna e eventual encaminhamento às autoridades judiciais e policiais (PJ / MP) mediante ordem legal.
+                As conversas usam um buffer temporário que expira 5 minutos após a última mensagem nova. Uma denúncia guarda o conteúdo então disponível, sem garantir a conversa completa, para auditoria interna e eventual encaminhamento às autoridades judiciais e policiais (PJ / MP) mediante ordem legal. Tentar novamente ou cancelar não recupera mensagens expiradas. A limpeza periódica remove denúncias com mais de 30 dias.
               </div>
             </label>
 
             <button
               type="submit"
-              disabled={loading || !email || !legalAccepted}
+              disabled={loading || cooldown > 0 || !email || !legalAccepted}
               className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 text-white rounded-xl px-4 py-3 font-semibold transition-all"
             >
-              {loading ? 'A enviar...' : 'Continuar'}
+              {loading ? 'A enviar...' : cooldown > 0 ? `Tentar novamente em ${cooldown}s` : 'Continuar'}
               {!loading && <LogIn className="w-4 h-4" />}
             </button>
           </form>
         ) : (
           <form onSubmit={handleVerifyOtp} className="space-y-4">
+            <p role="status" className="text-sm text-slate-300">Pedido de email confirmado para <strong>{destination}</strong>. Consulta a caixa de entrada e o spam.</p>
             <div className="space-y-1">
-              <label htmlFor="otp" className="text-xs font-medium text-slate-400 uppercase tracking-wider">Código de 6 dígitos</label>
+              <label htmlFor="otp" className="text-xs font-medium text-slate-400 uppercase tracking-wider">Código do email (6–10 dígitos)</label>
               <input
                 id="otp"
                 type="text"
                 value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                onChange={(e) => { operation.clear(); setValidationError(''); setOtp(e.target.value.replace(/\D/g, '').slice(0, 10)); }}
+                inputMode="numeric"
+                autoComplete="one-time-code"
                 placeholder="000000"
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 text-center tracking-[0.5em] font-mono text-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-400 text-center tracking-[0.15em] sm:tracking-[0.5em] font-mono text-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                 required
               />
             </div>
 
             <button
               type="submit"
-              disabled={loading || otp.length < 6}
+              disabled={loading || !validEmailOtp(otp)}
               className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 text-white rounded-xl px-4 py-3 font-semibold transition-all"
             >
               {loading ? 'A verificar...' : 'Entrar'}
             </button>
             <button
               type="button"
-              onClick={() => setStep('EMAIL')}
+              onClick={() => void sendOtp(true)}
+              disabled={loading || cooldown > 0}
+              className="w-full text-sm text-slate-400 disabled:opacity-50 hover:text-white transition-colors"
+            >
+              {cooldown > 0 ? `Reenviar em ${cooldown}s` : 'Reenviar código'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { operation.clear(); setValidationError(''); setOtp(''); setDestination(''); setStep('EMAIL'); }}
               className="w-full text-sm text-slate-400 hover:text-white transition-colors"
             >
-              Voltar
+              Voltar e corrigir email
             </button>
           </form>
         )}
       </div>
 
       <footer className="w-full max-w-sm mt-auto pt-8 pb-4 text-center">
-        <p className="text-[10px] text-slate-500 leading-tight">
+        <p className="text-[10px] text-slate-400 leading-tight">
           O UNIDER é um projeto independente desenvolvido por estudantes e não possui qualquer afiliação, vínculo institucional, endosso ou suporte oficial por parte da Universidade de Coimbra.
         </p>
       </footer>

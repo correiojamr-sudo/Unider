@@ -46,7 +46,8 @@ comandos com `--help`.
 1. Preparar ambiente autorizado de validação, plano de recuperação e, se a
    alteração for incompatível, janela de manutenção acordada.
 2. Aplicar apenas a migration nova/revista correspondente à base confirmada.
-3. Publicar **ambas** as Functions com `_shared`, mantendo verificação JWT e
+3. Publicar as quatro Functions (`send-message`, `report-room`,
+   `get-room-messages` e `get-server-time`) com `_shared`, mantendo verificação JWT e
    configuração Redis coerente.
 4. Validar contrato servidor, permissões privadas e efeitos dos envios.
 5. Publicar Pages correspondente e testar browsers/entrada/ciclo completo.
@@ -56,9 +57,64 @@ Não misturar schema novo com frontend/Functions antigos incompatíveis. Para o
 PR #6, a preparação e publicação para testes já foram registadas; a ordem acima
 não é uma instrução para reaplicá-lo hoje.
 
+U04 acrescenta `get-room-messages`, sem migration nem alteração de configuração
+remota. Quando houver autorização específica para publicação, publicar primeiro
+esta Function com os segredos servidor existentes e verificação JWT mantida;
+validar JWT real, recusas e leitura do buffer antes de publicar o frontend U04.
+Um frontend U04 publicado antes da Function apresenta erro de recuperação com
+retry; não recupera por acesso direto ao Redis. A função lê sob o lock comum,
+com autorização `message`; não deve fechar a sala nem renovar TTLs dos dados.
+Validar reconexão real entre duas sessões, broadcasts intercalados, buffer
+expirado, sala fechada/ban/termos e preservação da prova de denúncia. Mocks locais
+não aprovam esses efeitos alojados. Nenhum deploy foi efetuado nesta entrega;
+não reaplicar o bootstrap nem os três SQL históricos para publicar a Function.
+
+U06 acrescenta `get-server-time`, apenas local nesta entrega. Publicá-la antes
+do frontend U06, com JWT ligado; confirmar resposta ISO autenticada, ausência
+de mutações e falha sem sessão. Não precisa de Redis nem de schema novo.
+Sem essa Function ou sem confirmação recente, o frontend conserva a sala/intenção
+mas bloqueia nova entrada e mostra «Horário por confirmar». A amostra da Function
+não substitui hora/prazos PostgreSQL. Publicar Pages exige configuração pública
+válida: o preflight recusa env ausente/URL inválido/chave secreta. O build CI/local
+com fixtures sintéticas não é um artefacto de release. Não abrir inscrições.
+Consultar a [matriz U06](../validation/2026-10-05-integration-readiness.md) antes
+de decidir publicação/testes reais; esta entrega não realizou deploys.
+
 Em falha, impedir novas correspondências pelo mecanismo autorizado e corrigir
 em frente. Não restaurar permissões inseguras, broadcasts cliente ou inserção
 direta de denúncias para fazer o frontend antigo funcionar.
+
+## Publicação futura das correções A01–A04
+
+O candidato local de 08/10 acrescenta a migration
+`20261006141924_secure_suggestions_and_match_intents.sql`. Não foi aplicada num
+serviço. É incompatível com os RPCs antigos sem argumentos de emparelhamento:
+o novo frontend envia `p_intent` e `p_day` tanto na entrada como no cancelamento.
+O novo contrato de mensagens usa `(sender_id, id)` no histórico e na interface.
+
+Quando houver autorização específica, confirmar primeiro projeto/histórico e
+backup, reconciliando o bootstrap consolidado acima sem reaplicar migrations
+históricas. Preparar a publicação fora da janela de conversas e suspender novas
+entradas pelo mecanismo autorizado. A migration preserva as tabelas públicas,
+acrescenta metadados privados de intenção e restringe INSERT de sugestões a
+`user_id`/`suggestion`; aprovação administrativa continua a usar autoridade
+servidor. Salas existentes não são reabertas nem prolongadas pela migration.
+Entradas antigas da fila sem intenção são descartadas na próxima reconciliação.
+
+Aplicar apenas esta migration sobre a base confirmada, publicar
+`get-room-messages` com JWT mantido e publicar o frontend correspondente como
+uma sequência coordenada. Evitar misturar clientes/RPCs de versões diferentes:
+clientes antigos falham na entrada/cancelamento após a remoção dos RPCs antigos;
+clientes novos falham contra schema antigo. Validar INSERT comum, tentativa de
+autoaprovação, aprovação administrativa/leitura, cancelamento nas duas ordens,
+retry tardio, nova intenção, logout após purga e mensagens com UUID igual entre
+participantes em sessões reais autorizadas.
+
+Em falha, conservar entradas suspensas e corrigir em frente. Não reintroduzir
+os RPCs antigos nem permissões de aprovação cliente como rollback de conveniência.
+Um restauro de backup exige plano separado e autorizado, incluindo efeitos em
+denúncias/contas recebidas entretanto. O [registo local A01–A04](../validation/2026-10-08-backend-findings-fixes.md)
+descreve evidência e limites; não autoriza deploy nem certifica serviços alojados.
 
 ## Email e entrada de teste
 

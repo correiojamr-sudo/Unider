@@ -10,6 +10,14 @@ os contratos entre interface, servidor e serviços externos.
 - [Contratos](contracts.md): RPCs, Functions, canais e limites atuais.
 - [Desenvolvimento](development.md): execução local e verificações.
 - [Estado e pendências](project-status.md): o que foi registado e o que falta.
+- [Revisão A01–A05](validation/2026-10-05-open-findings.md): evidência original
+  e critérios de aceitação, com ligação às correções posteriores.
+- [Correções A01–A05 aceites localmente](validation/2026-10-08-findings-fixes.md):
+  revisão, testes finais e limites de publicação/validação alojada.
+- [Auditoria funcional e correções](validation/2026-10-05-site-audit.md): problemas
+  identificados em 05/10, evidência e sequência de tarefas por área.
+- [Correções U01–U06 e integração pendente](validation/2026-10-05-integration-readiness.md):
+  resultados locais, leitura parcial dos serviços e autorizações para publicar/testar.
 - [Validação](validation/README.md): níveis de evidência e cenários de aceitação.
 - [Operação e lançamento](operations/release.md): configuração e ordem coordenada.
 - [Coordenação](coordination.md): tarefas, revisão e passagem à área seguinte.

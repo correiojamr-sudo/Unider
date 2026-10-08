@@ -12,6 +12,16 @@ export interface RoomState {
   peer_extended: boolean;
   server_now: string;
 }
+export function isRoomState(data: unknown, roomId?: string | null): data is RoomState {
+  if (!data || typeof data !== 'object') return false;
+  const value = data as Record<string, unknown>;
+  return value.status === 'matched' && typeof value.room_id === 'string' && value.room_id.length > 0
+    && (!roomId || value.room_id === roomId) && typeof value.peer_id === 'string'
+    && ['expires_at', 'hard_close_at', 'decision_until', 'server_now'].every(key => typeof value[key] === 'string' && Number.isFinite(Date.parse(value[key] as string)))
+    && (value.ended_at === null || typeof value.ended_at === 'string' && Number.isFinite(Date.parse(value.ended_at)))
+    && (value.end_reason === null || typeof value.end_reason === 'string')
+    && ['extended_once', 'extended', 'peer_extended'].every(key => typeof value[key] === 'boolean');
+}
 export function roomView(room: RoomState | null, now: number) {
   if (!room) return { timeLeft: 0, phase: 'loading' as const };
   const expires = Date.parse(room.expires_at);
