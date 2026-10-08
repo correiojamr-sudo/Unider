@@ -1,6 +1,9 @@
 import type { ChatMessage } from '../store/chatStore';
 import { classifyChatError } from './chatRecovery.ts';
 
+// Redis deduplicates within a sender, so two participants may use the same UUID.
+export const chatMessageKey = (message: Pick<ChatMessage, 'sender_id' | 'id'>) => `${message.sender_id}:${message.id.toLowerCase()}`;
+
 export function validHistoryMessage(value: unknown, userId: string, peerId: string): value is ChatMessage {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const m = value as Record<string, unknown>;
@@ -20,8 +23,9 @@ export function readHistorySnapshot(value: unknown, roomId: string, userId: stri
     if (!validHistoryMessage(value, userId, peerId)) throw new Error('Invalid history');
     const message = { id: value.id.toLowerCase(), sender_id: value.sender_id, text: value.text, timestamp: value.timestamp };
     const serialized = JSON.stringify(message);
-    if (seen.has(message.id) && seen.get(message.id) !== serialized) throw new Error('Conflicting history');
-    seen.set(message.id, serialized);
+    const key = chatMessageKey(message);
+    if (seen.has(key) && seen.get(key) !== serialized) throw new Error('Conflicting history');
+    seen.set(key, serialized);
     return message;
   });
 }
@@ -29,11 +33,12 @@ export function readHistorySnapshot(value: unknown, roomId: string, userId: stri
 // Preserve known messages when a snapshot overlaps a broadcast or a send reply.
 // Timestamp then ID gives deterministic order even when replies arrive backwards.
 export function mergeChatMessages(known: ChatMessage[], incoming: ChatMessage[]) {
-  const messages = new Map(known.map(message => [message.id, message]));
-  for (const message of incoming) if (!messages.has(message.id)) messages.set(message.id, message);
+  const messages = new Map(known.map(message => [chatMessageKey(message), message]));
+  for (const message of incoming) if (!messages.has(chatMessageKey(message))) messages.set(chatMessageKey(message), message);
   return [...messages.values()].sort((a, b) => {
     const time = (Date.parse(a.timestamp) || 0) - (Date.parse(b.timestamp) || 0);
-    return time || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+    const aKey = chatMessageKey(a), bKey = chatMessageKey(b);
+    return time || (aKey < bKey ? -1 : aKey > bKey ? 1 : 0);
   });
 }
 

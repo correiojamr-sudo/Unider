@@ -11,7 +11,8 @@ import { formatTimeCountdown } from '../utils/time';
 import { classifyChatError, reportIssueText, sameChatContext, sessionIssueText } from '../lib/chatRecovery';
 import { runChatOperation } from '../lib/chatOperations';
 import { useChatHistory } from '../hooks/useChatHistory';
-import { validHistoryMessage } from '../lib/chatHistory';
+import { chatMessageKey, validHistoryMessage } from '../lib/chatHistory';
+import { matchIntentArgs } from '../lib/matchIntent';
 
 export default function Chat() {
   const userId = useAuthStore(state => state.user?.id);
@@ -80,9 +81,18 @@ function ChatContent() {
 
   const leave = async (next: boolean) => {
     if (next && !canFindNext() || !startOperation()) return;
+    const intent = useChatStore.getState().queueIntent;
+    // Fence in-flight match replies immediately, without invalidating this exit.
+    if (intent) useChatStore.getState().beginQueueCancellation();
     await runChatOperation({
       current, settled,
-      request: () => (roomId ? supabase.rpc('leave_room', { p_room: roomId }) : supabase.rpc('leave_matchmaking')).abortSignal(AbortSignal.timeout(10000)),
+      request: async () => {
+        if (intent) {
+          const result = await supabase.rpc('leave_matchmaking', matchIntentArgs(intent)).abortSignal(AbortSignal.timeout(10000));
+          if (result.error || !current()) return result;
+        }
+        return roomId ? await supabase.rpc('leave_room', { p_room: roomId }).abortSignal(AbortSignal.timeout(10000)) : { error: null };
+      },
       confirmed: result => {
         if (result.error !== null) throw result.error || new Error('Unconfirmed leave');
         const queueNext = next && canFindNext();
@@ -188,7 +198,7 @@ function ChatContent() {
         {messages.map(message => {
           const mine = message.sender_id === user?.id;
           return (
-            <div key={message.id} className={`flex flex-col max-w-[80%] ${mine ? 'self-end items-end' : 'self-start items-start'}`}>
+            <div key={chatMessageKey(message)} className={`flex flex-col max-w-[80%] ${mine ? 'self-end items-end' : 'self-start items-start'}`}>
               <span className="text-[10px] text-slate-400 mb-1">{mine ? 'Tu' : 'Colega'}</span>
               <div className={`px-4 py-2 rounded-2xl break-words ${mine ? 'bg-blue-600' : 'bg-slate-800'}`}>{message.text}</div>
             </div>

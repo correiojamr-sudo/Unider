@@ -8,6 +8,8 @@ import { formatTimeCountdown } from '../utils/time';
 import { lobbySchedule } from '../lib/lobbySchedule';
 import { canJoinLobbyQueue, hasLobbyQueueIntent, shouldEnterChat } from '../lib/lobbyQueue';
 import { saveLobbySuggestion } from '../lib/lobbySuggestion';
+import { lobbyRequest } from '../lib/lobbyRequest';
+import { matchIntentArgs } from '../lib/matchIntent';
 import { LogOut, Clock, Send, Users, Settings } from 'lucide-react';
 import TermsModal from '../components/modals/TermsModal';
 import SettingsModal from '../components/modals/SettingsModal';
@@ -34,33 +36,45 @@ function LobbyContent() {
   const [suggestionError, setSuggestionError] = useState('');
   const suggestionRequest = useRef(0);
   const suggestionBusy = useRef(false);
+  const suggestionController = useRef<AbortController | null>(null);
 
   const [showSettings, setShowSettings] = useState(false);
-  const [terms, setTerms] = useState<{ userId?: string; status: TermsStatus }>({ status: 'checking' });
+  const [terms, setTerms] = useState<{ userId?: string; revision?: number; status: TermsStatus }>({ status: 'checking' });
   const [termsRetry, setTermsRetry] = useState(0);
-  const termsStatus = terms.userId === userId ? terms.status : 'checking';
+  const termsStatus = terms.userId === userId && terms.revision === sessionRevision ? terms.status : 'checking';
   const accepted = Boolean(userId && termsStatus === 'accepted');
   const clockReady = clockStatus === 'confirmed' && Boolean(useAppStore.getState().confirmedTime(userId, sessionRevision));
   const inQueue = clockReady ? hasLobbyQueueIntent(chat, userId, currentTime)
     : Boolean(userId && chat.ownerId === userId && !chat.roomId && chat.isQueueing);
   const ownRoom = Boolean(userId && chat.ownerId === userId && chat.roomId);
+  const [queueCancelError, setQueueCancelError] = useState('');
+  const [queueCancelBusy, setQueueCancelBusy] = useState(false);
+  const queueCancelRequest = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
+    const current = () => !cancelled && useAuthStore.getState().user?.id === userId
+      && (useAuthStore.getState().sessionRevision ?? 0) === sessionRevision;
+    const unsubscribe = useAuthStore.subscribe(() => { if (!current()) controller.abort(); });
     const checkTerms = async () => {
       if (!userId) return;
+      setTerms({ userId, revision: sessionRevision, status: 'checking' });
       try {
-        const { data, error } = await supabase.from('profiles').select('terms_version').eq('id', userId).single();
-        if (!cancelled && useAuthStore.getState().user?.id === userId) {
-          setTerms({ userId, status: error || !data ? 'error' : data.terms_version === '1.1' ? 'accepted' : 'required' });
+        const { data, error } = await lobbyRequest(controller, signal => supabase.from('profiles')
+          .select('terms_version').eq('id', userId).abortSignal(signal).single());
+        if (current()) {
+          setTerms({ userId, revision: sessionRevision, status: error || !data ? 'error' : data.terms_version === '1.1' ? 'accepted' : 'required' });
         }
       } catch {
-        if (!cancelled) setTerms({ userId, status: 'error' });
+        if (current()) setTerms({ userId, revision: sessionRevision, status: 'error' });
+      } finally {
+        controller.abort();
       }
     };
     void checkTerms();
-    return () => { cancelled = true; };
-  }, [userId, termsRetry]);
+    return () => { cancelled = true; unsubscribe(); controller.abort(); };
+  }, [userId, sessionRevision, termsRetry]);
 
   useEffect(() => {
     const state = useChatStore.getState();
@@ -71,11 +85,30 @@ function LobbyContent() {
     } else if (useAuthStore.getState().user?.id === userId && shouldEnterChat(state, userId, accepted, now)) {
       navigate('/chat');
     }
-  }, [currentTime, clockStatus, chat.isQueueing, chat.queueDay, chat.ownerId, chat.roomId, userId, sessionRevision, accepted, navigate]);
+  }, [currentTime, clockStatus, chat.isQueueing, chat.queueDay, chat.queueCancelling, chat.ownerId, chat.roomId, userId, sessionRevision, accepted, navigate]);
 
   useEffect(() => {
-    return () => { suggestionRequest.current += 1; };
+    return () => { queueCancelRequest.current += 1; };
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = useAuthStore.subscribe(state => {
+      if ((state.sessionRevision ?? 0) === sessionRevision) return;
+      suggestionRequest.current += 1;
+      suggestionController.current?.abort();
+      if (suggestionBusy.current) {
+        suggestionBusy.current = false;
+        setSubmitting(false);
+        setSuggestionError('Não foi possível confirmar o envio. O texto foi mantido; a sugestão pode já ter sido recebida.');
+      }
+      setSubmitted(false);
+    });
+    return () => {
+      unsubscribe();
+      suggestionRequest.current += 1;
+      suggestionController.current?.abort();
+    };
+  }, [sessionRevision]);
 
   useEffect(() => {
     if (!submitted) return;
@@ -87,22 +120,30 @@ function LobbyContent() {
     e.preventDefault();
     if (!userId || suggestionBusy.current || suggestion.length < 5 || suggestion.length > 180) return;
     const request = ++suggestionRequest.current;
+    const controller = new AbortController();
+    suggestionController.current = controller;
+    const current = () => request === suggestionRequest.current && useAuthStore.getState().user?.id === userId
+      && (useAuthStore.getState().sessionRevision ?? 0) === sessionRevision;
+    const unsubscribe = useAuthStore.subscribe(() => { if (!current()) controller.abort(); });
     suggestionBusy.current = true;
     setSubmitting(true);
     setSubmitted(false);
     setSuggestionError('');
     try {
-      const confirmed = await saveLobbySuggestion(() => supabase.from('icebreaker_suggestions').insert({ user_id: userId, suggestion }));
-      if (request !== suggestionRequest.current || useAuthStore.getState().user?.id !== userId) return;
+      const confirmed = await saveLobbySuggestion(() => lobbyRequest(controller, signal => supabase
+        .from('icebreaker_suggestions').insert({ user_id: userId, suggestion }).abortSignal(signal)));
+      if (!current()) return;
       if (confirmed) {
         setSubmitted(true);
         setSuggestion('');
       } else {
-        setSuggestionError('Não foi possível confirmar o envio. O texto foi mantido; tenta novamente.');
+        setSuggestionError('Não foi possível confirmar o envio. O texto foi mantido; a sugestão pode já ter sido recebida.');
       }
     } finally {
-      if (request === suggestionRequest.current) {
+      unsubscribe(); controller.abort();
+      if (current()) {
         suggestionBusy.current = false;
+        suggestionController.current = null;
         setSubmitting(false);
       }
     }
@@ -115,16 +156,34 @@ function LobbyContent() {
     state.setQueueing(true, now);
   };
 
-  const cancelQueue = () => {
+  const cancelQueue = async () => {
     const state = useChatStore.getState();
-    if (state.ownerId === userId) state.setQueueing(false);
+    if (state.ownerId !== userId || queueCancelBusy) return;
+    if (!state.queueIntent) { state.setQueueing(false); return; }
+    const request = ++queueCancelRequest.current;
+    const current = () => request === queueCancelRequest.current && useAuthStore.getState().user?.id === userId
+      && useChatStore.getState().contextVersion === state.contextVersion;
+    state.beginQueueCancellation();
+    setQueueCancelBusy(true); setQueueCancelError('');
+    try {
+      const result = await supabase.rpc('leave_matchmaking', matchIntentArgs(state.queueIntent)).abortSignal(AbortSignal.timeout(10000));
+      if (!current()) return;
+      if (result.error) throw result.error;
+      useChatStore.getState().setQueueing(false);
+    } catch {
+      if (current()) setQueueCancelError('Cancelamento não confirmado. A entrada automática está suspensa; tenta novamente.');
+    } finally {
+      if (request === queueCancelRequest.current) setQueueCancelBusy(false);
+    }
   };
 
   return (
     <div className="flex-1 flex flex-col items-center p-6 space-y-8 relative">
       {termsStatus === 'required' && (
-        <TermsModal key={userId} onAccept={() => {
-          if (useAuthStore.getState().user?.id === userId) setTerms({ userId, status: 'accepted' });
+        <TermsModal key={`${userId}:${sessionRevision}`} onAccept={() => {
+          if (useAuthStore.getState().user?.id === userId && (useAuthStore.getState().sessionRevision ?? 0) === sessionRevision) {
+            setTerms({ userId, revision: sessionRevision, status: 'accepted' });
+          }
         }} />
       )}
       {showSettings && (
@@ -201,7 +260,7 @@ function LobbyContent() {
         {termsStatus === 'error' && (
           <div className="text-sm space-y-2">
             <p role="alert" className="text-red-300">Não foi possível confirmar os termos. Tenta novamente.</p>
-            <button onClick={() => { setTerms({ userId, status: 'checking' }); setTermsRetry(value => value + 1); }} className="bg-slate-700 rounded-xl p-3">Verificar termos</button>
+            <button onClick={() => { setTerms({ userId, revision: sessionRevision, status: 'checking' }); setTermsRetry(value => value + 1); }} className="bg-slate-700 rounded-xl p-3">Verificar termos</button>
           </div>
         )}
 
@@ -224,7 +283,8 @@ function LobbyContent() {
                 <div className="text-sm text-slate-400">
                    {currentMode === 'QUEUE' ? 'Às 22h30 vamos pedir o emparelhamento, após confirmar os termos.' : 'A abrir o chat para pedir o emparelhamento...'}
                 </div>
-                <button onClick={cancelQueue} className="bg-slate-700 rounded-lg px-4 py-2 text-sm">Cancelar espera</button>
+                <button onClick={() => void cancelQueue()} disabled={queueCancelBusy} className="bg-slate-700 rounded-lg px-4 py-2 text-sm">{queueCancelBusy ? 'A cancelar...' : 'Cancelar espera'}</button>
+                {queueCancelError && <p role="alert" className="text-red-300">{queueCancelError}</p>}
               </div>
             )}
           </div>

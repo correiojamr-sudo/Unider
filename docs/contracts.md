@@ -24,6 +24,16 @@ apenas deixa de aplicar uma resposta antiga. `accept_terms` exige `data === true
 eliminação e saída RPC void exigem ausência de erro. Após eliminação confirmada
 não se volta a pedir eliminação para repetir logout.
 
+A consulta `profiles.terms_version` e o INSERT de `icebreaker_suggestions`
+também usam `AUTH_TIMEOUT_MS` (10 segundos), com o sinal encaminhado por
+`abortSignal` ao SDK. A espera da interface termina nesse prazo mesmo perante
+transporte tardio; a leitura oferece retry e a sugestão mantém o texto. Não há
+retry automático do POST e a interface indica que uma escrita pode já ter sido
+recebida. Um novo envio explícito pode criar outra sugestão: este contrato não
+introduz deduplicação servidor. Identidade, montagem, pedido e `sessionRevision`
+invalidam respostas antigas; renovar a sessão do mesmo utilizador volta a
+verificar os termos e conserva o rascunho. Ver [validação A05](validation/2026-10-08-lobby-request-fixes.md).
+
 Logout só limpa sessão/chat após confirmação Auth atual. O armazenamento temporário
 do SDK descarta alterações em erro, inclusive a remoção local que o SDK pode
 preparar num logout offline. Uma falha de `leave_room`/`leave_matchmaking` não
@@ -40,12 +50,12 @@ email, ID de utilizador nem uma notificação `SIGNED_OUT` de origem antiga.
 | Operação | Entrada | Resultado/função |
 | --- | --- | --- |
 | `accept_terms` | `p_version: '1.1'` | `true`; guarda consentimento/hora no servidor. |
-| `find_or_join_match` | Sem argumentos | `waiting`, `closed` ou objeto `matched`. |
+| `find_or_join_match` | `p_intent: uuid`, `p_day: date` | `waiting`, `closed`, `cancelled` ou objeto `matched`; intenção da entrada no separador. |
 | `get_room_state` | `p_room: uuid` | `RoomState`; valida membership e renova heartbeat. |
 | `get-server-time` (Function) | `POST {}` com JWT de utilizador | `{ server_now: ISO UTC canónico }`; apenas apresentação, sem mutações. |
 | `extend_room` | `p_room: uuid` | `RoomState`; regista voto e pode prolongar uma vez. |
-| `leave_room` | `p_room: uuid` | Termina a sala do participante. |
-| `leave_matchmaking` | Sem argumentos | Remove o próprio utilizador da fila. |
+| `leave_room` | `p_room: uuid` | Termina a sala do participante e as intenções associadas; ausência real é sucesso idempotente, sala existente de terceiro é recusa. |
+| `leave_matchmaking` | `p_intent: uuid`, `p_day: date` | Cancela definitivamente essa intenção e a sala que ela encontrou, se existir; não afeta uma intenção posterior. |
 | `delete_own_user_account` | Sem argumentos | Elimina a própria conta; fecha salas e preserva prova conforme retenção. |
 | `send-message` | `{ roomId, message: { id, text } }` | `{ success: true, message }`; envio só pelo servidor. |
 | `get-room-messages` | `{ roomId }` | `{ success: true, roomId, messages, partial: true }`; snapshot do buffer ainda disponível, apenas para sala ativa autorizada. |
@@ -70,7 +80,12 @@ SQL, hook, helper, interface e testes na mesma tarefa atribuída.
   permissiva ampla preexistente.
 - `profiles`: identidade institucional, ban e consentimento. Sem escrita direta
   cliente para alterar ban ou consentimento.
-- `icebreaker_suggestions`: sugestões; o cliente insere a própria e lê aprovadas.
+- `icebreaker_suggestions`: o cliente só tem INSERT de `user_id` e `suggestion`,
+  com autoria própria e `is_approved IS FALSE`; só lê aprovadas. Não pode enviar
+  `is_approved` (incluindo `false`/`null`), nem aprovar por UPDATE/upsert. Escrita
+  administrativa e aprovação pelo serviço mantêm-se. A migration nova remove
+  grants de escrita por tabela e por coluna de PUBLIC/anon/authenticated antes
+  de conceder os dois campos permitidos.
 - `matchmaking_queue`: fila/lease; gerida por RPC, não por INSERT cliente.
 - O lobby não cria `campus-queue` nem outro Presence público. A pré-fila é
   intenção local cancelável, não confirmação de uma entrada na fila servidor.
@@ -113,7 +128,11 @@ Os RPCs continuam a decidir os horários, elegibilidade e membership no servidor
 | Limpeza agendada no schema | A cada 5 minutos; falhas podem exceder a retenção operacional. |
 
 Chaves Redis: `room:<uuid>:lock`, `room:<uuid>:messages`, `room:<uuid>:dedup`.
-Retry com ID já aceite não renova os TTLs. `dedup` conserva IDs, timestamps,
+Retry com a mesma chave `(sender_id, id)` já aceite não renova os TTLs. Essa chave
+composta identifica também snapshots, fusão cliente e elementos React: dois
+participantes podem usar o mesmo UUID e ambas as mensagens são apresentadas.
+Conteúdos contraditórios para o mesmo remetente/UUID recusam o snapshot inteiro.
+`dedup` conserva IDs, timestamps,
 remetente e hash do texto, não o plaintext. A quota depende da existência desse
 hash, não de um contador permanente.
 
@@ -156,18 +175,38 @@ prova ausência de mensagens anteriores. Não há histórico recuperável garant
 após fecho/decisão, expiração do buffer ou revogação de acesso. O cliente pede
 uma vez após cada transição para `SUBSCRIBED`, já com receção instalada; não faz
 polling de histórico. Snapshot, broadcasts e respostas de envio são fundidos
-atomicamente por ID, preservando mensagens conhecidas, por timestamp e depois ID.
+atomicamente por `(sender_id, id)`, preservando mensagens conhecidas, por timestamp
+e depois pela chave composta.
 Erro conserva mensagens e oferece retry manual; respostas de contexto antigo
 (incluindo `contextVersion`) ou de uma subscrição interrompida são ignoradas.
 Recuperação pendente não bloqueia saída ou denúncia.
 
-`isQueueing` e `queueDay` conservam a intenção de espera no separador para o
+`isQueueing`, `queueDay` e `queueIntent: { id, day }` conservam a intenção de espera no separador para o
 mesmo `ownerId` e dia de Lisboa. A entrada automática pelo lobby exige essa
 intenção, ausência de sala, fase de novos pares e termos `1.1` confirmados para
-o utilizador atual. Cancelamento remove a intenção; contexto antigo sem data ou
+o utilizador atual. Cancelamento confirmado remove a intenção; contexto antigo sem UUID/data ou
 do dia anterior não ativa entrada. Limpar a intenção não limpa uma sala existente.
 Estes campos não concedem membership nem autorização: o RPC continua a validar
 consentimento, elegibilidade e os prazos com hora do servidor.
+
+`queueIntent.id` nasce num novo clique de entrada; refresh conserva-o e uma sala
+encontrada mantém a associação para a saída. `queueCancelling` suspende a entrada
+automática/polling antes do pedido, incluindo respostas já pendentes, mas não muda
+`contextVersion`: a própria confirmação de saída continua válida. Falha conserva
+essa intenção suspensa para retry, também após refresh; saída local explícita
+continua sem confirmar o efeito remoto.
+
+Os dois RPCs de fila exigem UUID e dia de Lisboa. A tabela privada
+`unider_private.matchmaking_intents` liga `(user_id, intent_id, intent_day)` a
+cancelamento/sala; nunca recebe escrita cliente direta. Cancelamento cria um
+registo mesmo se o primeiro pedido de entrada ainda não chegou. Emparelhamento,
+cancelamento e saída de sala usam o mesmo lock transacional; uma intenção que já
+encontrou uma sala não cria outra. `leave_room` também termina as intenções
+associadas, impedindo entrada tardia após Novo Chat/logout. Um cancelamento antigo
+só fecha a sala ligada à intenção antiga. Datas diferentes do dia servidor não
+podem criar pares; o Cron elimina estes metadados anteriores ao dia de Lisboa
+anterior, depois de essa regra já impedir a sua reutilização. As assinaturas
+antigas sem argumentos foram removidas; requer lançamento coordenado.
 
 ## Erros e recuperação
 
@@ -195,6 +234,9 @@ campos e as datas esperados são válidos, e o contexto ainda é o atual.
 
 Saída normal exige resposta sem erro de `leave_room`/`leave_matchmaking`;
 `data: null` é normal para estes RPCs void. Falha mantém contexto para retry.
+`leave_room` devolve sucesso se a sala deixou realmente de existir (por exemplo,
+após purga), permitindo logout; uma sala existente de terceiro continua a devolver
+`42501`. O cliente não converte erros de autorização ou transporte em sucesso.
 A saída local explícita faz reset do separador e da fila, sem afirmar que o
 servidor fechou a sala. Não executa `leave_room` por outra identidade nem apaga
 prova servidor. Pedidos anteriores podem ainda concluir no servidor.

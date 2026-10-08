@@ -77,3 +77,13 @@ test('client rejects malformed history and conflicting IDs before merging', () =
     assert.throws(() => readHistorySnapshot(data, 'room-a', 'alice', 'bob'));
   }
 });
+
+test('snapshot and broadcasts preserve equal UUIDs from different senders and deduplicate each retry', () => {
+  const first = message(1), second = { ...first, sender_id: 'alice', text: 'Mensagem da Alice' };
+  const snapshot = readHistorySnapshot(reply([first, second, first]).data, 'room-a', 'alice', 'bob');
+  const merged = mergeChatMessages([first], snapshot);
+  assert.equal(merged.length, 2);
+  assert.deepEqual(merged.map(m => m.sender_id), ['alice', 'bob']);
+  assert.deepEqual(mergeChatMessages(merged, [first, second]), merged);
+  assert.throws(() => readHistorySnapshot(reply([second, { ...second, text: 'Contradição' }]).data, 'room-a', 'alice', 'bob'));
+});

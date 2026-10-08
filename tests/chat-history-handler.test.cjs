@@ -108,3 +108,14 @@ test('malformed snapshots fail closed, never return partial plaintext or treat R
   const f = fixture(); f.roomState = { room_id: room, peer_id: outsider + 'bad' };
   assert.equal((await f.read(req())).status, 503);
 });
+
+test('two authenticated senders can share a UUID without poisoning the snapshot', async () => {
+  const f = fixture();
+  const first = message(), second = { ...first, sender_id: alice, text: 'Mesmo UUID, outro autor' };
+  f.raw = [JSON.stringify(first), JSON.stringify(second), JSON.stringify(first)];
+  const response = await f.read(req());
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).messages, [first, second, first]);
+  f.raw.push(JSON.stringify({ ...second, text: 'Contradição do mesmo autor' }));
+  assert.equal((await f.read(req())).status, 503);
+});

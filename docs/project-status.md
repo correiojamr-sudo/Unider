@@ -1,5 +1,32 @@
 # Estado e trabalho pendente
 
+## Correções A01–A05 aceites localmente em 08/10/2026
+
+Revisão de `5fcd34b4eaa6b5cd4fa8681817128a4c6bdfb33f`, a pedido do proprietário,
+apenas para identificar e registar problemas. **Nenhuma correção nesta revisão.**
+O [registo A01–A05](validation/2026-10-05-open-findings.md) guarda prioridades,
+evidência, limites e critérios de aceitação: autoaprovação de sugestões, corrida
+ao cancelar a fila, colisão de IDs de mensagens, logout com sala purgada e
+pedidos pendentes no lobby. A revisão original não os corrigiu; a sequência
+posterior foi concluída, revista e aceite localmente em 08/10. Ver a
+[entrega integrada A01–A05](validation/2026-10-08-findings-fixes.md), com os
+ficheiros, testes e limites. A01–A04 passaram revisão independente; A05 passou
+revisão da Coordenação e regressões de timeout/respostas antigas.
+
+Verificação final: **101 testes passaram, zero falhas, dois excluídos** no gate
+com as cinco fixtures Chrome. Os dois testes de concorrência excluídos de PGlite
+passaram separadamente numa base PostgreSQL 18.6 local descartável:
+**18 testes passaram, zero falhas/exclusões**. Lint, build e Deno das quatro
+Functions passaram. O build usou configuração pública sintética, não publicável.
+
+Existe agora a migration incremental
+`20261006141924_secure_suggestions_and_match_intents.sql`. **Não foi aplicada
+ao Supabase alojado.** Nenhum deploy ou configuração remota foi realizado.
+O contrato de emparelhamento exige UUID/dia e é incompatível com os RPCs antigos;
+seguir o [plano de lançamento](operations/release.md), apenas com autorização.
+CI da nova revisão e validação alojada continuam separados da aprovação local.
+Os registos U01–U06 e dos serviços abaixo são históricos, não o estado do novo diff.
+
 ## Auditoria funcional de 05/10 — atualização posterior à organização
 
 Base local confirmada: `main` em `07c8bb2d529b2968317442b7dc8e13a09b537908`.

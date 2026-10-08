@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { useChatStore } from './chatStore';
 import { AUTH_TIMEOUT_MS, authErrorMessage } from '../lib/authOperations';
 import { withScopedAuth } from '../lib/authSession';
+import { matchIntentArgs } from '../lib/matchIntent';
 
 interface AuthState {
   user: User | null;
@@ -60,14 +61,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     let stage: 'leave' | 'logout' = 'leave';
     try {
       if (!options?.accountDeleted) {
+        if (chat.queueIntent) {
+          chat.beginQueueCancellation();
+          const result = await supabase.rpc('leave_matchmaking', matchIntentArgs(chat.queueIntent)).abortSignal(AbortSignal.any([controller.signal, AbortSignal.timeout(AUTH_TIMEOUT_MS)]));
+          if (!current()) return false;
+          if (result.error) throw result.error;
+        }
         if (chat.roomId) {
           const result = await supabase.rpc('leave_room', { p_room: chat.roomId }).abortSignal(AbortSignal.any([controller.signal, AbortSignal.timeout(AUTH_TIMEOUT_MS)]));
           if (!current()) return false;
           if (result.error) throw result.error;
         }
-        const result = await supabase.rpc('leave_matchmaking').abortSignal(AbortSignal.any([controller.signal, AbortSignal.timeout(AUTH_TIMEOUT_MS)]));
-        if (!current()) return false;
-        if (result.error) throw result.error;
       }
       stage = 'logout';
       const result = await withScopedAuth(current, controller.signal, auth => auth.signOut());

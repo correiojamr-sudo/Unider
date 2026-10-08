@@ -4,9 +4,11 @@ const { load } = require('./load-ts.cjs');
 const { handler, dependencies } = load('supabase/functions/_shared/chat.ts');
 const { sendMessage } = load('supabase/functions/send-message/handler.ts');
 const { reportRoom } = load('supabase/functions/report-room/handler.ts');
+const { getRoomMessages } = load('supabase/functions/get-room-messages/handler.ts');
+const { mergeChatMessages, readHistorySnapshot } = load('src/lib/chatHistory.ts');
 const room = '00000000-0000-0000-0000-000000000001';
 const id = '00000000-0000-0000-0000-000000000002';
-const alice = 'alice', bob = 'bob';
+const alice = '00000000-0000-0000-0000-00000000000a', bob = '00000000-0000-0000-0000-00000000000b';
 function fixture() {
   const f = { user: alice, allowed: true, insertFails: false, broadcastFails: false,
     lock: null, closed: false, list: [], dedup: new Map(), reports: new Map(), broadcasts: [], writes: 0 };
@@ -24,7 +26,7 @@ function fixture() {
         assert.equal(name, 'authorize_room');
         if (!f.allowed || ![alice, bob].includes(f.user) || (f.closed && args.p_operation === 'message')) return { error: {}, data: null };
         if (args.p_operation === 'report') f.closed = true;
-        return { data: { peer_id: f.user === alice ? bob : alice }, error: null };
+        return { data: { room_id: room, peer_id: f.user === alice ? bob : alice }, error: null };
       },
     },
     redis: async cmd => {
@@ -38,6 +40,7 @@ function fixture() {
         if (f.lock === cmd[4]) f.lock = null;
         return 1;
       }
+      if (cmd[2] === 2) return f.lock === cmd[5] ? ['ok', [...f.list]] : ['expired'];
       if (f.lock !== cmd[6]) return ['expired'];
       const old = f.dedup.get(cmd[7]);
       if (old) return ['ok', old];
@@ -51,7 +54,7 @@ function fixture() {
       f.broadcasts.push(message);
     },
   };
-  f.send = handler(sendMessage, f.deps); f.report = handler(reportRoom, f.deps);
+  f.send = handler(sendMessage, f.deps); f.report = handler(reportRoom, f.deps); f.read = handler(getRoomMessages, f.deps);
   return f;
 }
 function req(body, authorization = 'Bearer fixture') {
@@ -92,6 +95,21 @@ test('delivery failure stays retryable and exact retry appends once', async () =
   assert.equal((await f.send(req(body()))).status, 200);
   assert.equal(f.list.length, 1);
   assert.equal((await f.send(req({ ...body(), message: { id, text: 'altered' } }))).status, 409);
+});
+
+test('same UUID across participants survives send, snapshot and client merge; each sender retry stays idempotent', async () => {
+  const f = fixture();
+  assert.equal((await f.send(req(body()))).status, 200);
+  f.user = bob;
+  const second = { roomId: room, message: { id, text: 'Outro participante, mesmo UUID' } };
+  assert.equal((await f.send(req(second))).status, 200);
+  assert.equal((await f.send(req(second))).status, 200);
+  assert.equal(f.list.length, 2);
+  const response = await f.read(req({ roomId: room }));
+  assert.equal(response.status, 200);
+  const snapshot = readHistorySnapshot(await response.json(), room, alice, bob);
+  assert.equal(mergeChatMessages(f.broadcasts, snapshot).length, 2);
+  assert.equal((await f.send(req({ roomId: room, message: { id, text: 'Mudança do mesmo remetente' } }))).status, 409);
 });
 test('failed report preserves evidence, retry and second reporter retain it', async () => {
   const f = fixture();

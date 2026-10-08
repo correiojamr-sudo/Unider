@@ -43,7 +43,7 @@ test('isolated chat browser recovery and stale-response regressions', {
     export const useAuthStore = create(() => ({ user: { id: 'alice' }, signOut: async () => {} }));
   `;
   const mockSupabase = `
-    function room(id) { return { ...window.fixture.serverRoom, room_id: id, peer_id: window.stores.chat.getState().peerId,
+    function room(id) { return { ...window.fixture.serverRoom, room_id: id, peer_id: window.stores.chat.getState().peerId || 'bob',
       server_now: new Date().toISOString() }; }
     function response(type, mode, success, call) {
       let promise;
@@ -63,7 +63,7 @@ test('isolated chat browser recovery and stale-response regressions', {
       rpc(name, args) {
         const f = window.fixture; const call = { name, args }; f.calls.push(call);
         if (name === 'get_room_state') return response(name, f.roomMode, () => ({ data: room(args.p_room), error: null, status: 200 }), call);
-        if (name === 'find_or_join_match') return response(name, f.matchMode, () => ({ data: { status: 'waiting', server_now: new Date().toISOString() }, error: null, status: 200 }), call);
+        if (name === 'find_or_join_match') return response(name, f.matchMode, () => ({ data: f.matchMode === 'matched' ? room('room-a') : { status: 'waiting', server_now: new Date().toISOString() }, error: null, status: 200 }), call);
         if (name === 'extend_room') return response(name, f.extendMode, () => {
           f.serverRoom.extended = true;
           return { data: room(args.p_room), error: null, status: 200 };
@@ -89,7 +89,8 @@ test('isolated chat browser recovery and stale-response regressions', {
       removeChannel(channel) { channel.removed = true; return Promise.resolve(); },
       from(table) {
         const query = { select() { return query; }, eq() { return query; },
-          single() { return Promise.resolve({ data: { terms_version: '1.1' }, error: null }); },
+          abortSignal() { return query; },
+          single() { const reply = Promise.resolve({ data: { terms_version: '1.1' }, error: null }); reply.abortSignal = () => reply; return reply; },
           limit() { return Promise.resolve({ data: [], error: null }); } };
         if (!['profiles', 'icebreaker_suggestions'].includes(table)) throw new Error('Unexpected table');
         return query;
@@ -169,6 +170,24 @@ test('isolated chat browser recovery and stale-response regressions', {
         channel.status('SUBSCRIBED');
       }); await flush();
       await page.getByText('Mensagem durante a interrupção', { exact: true }).waitFor();
+    });
+
+    await t.test('same UUID from two senders renders both messages and each retry only once', async () => {
+      await reset(); await ready();
+      await page.evaluate(() => {
+        const shared = { id: '00000000-0000-0000-0000-000000000099', timestamp: '2026-10-05T21:30:01.000Z' };
+        const first = { ...shared, sender_id: 'alice', text: 'Texto da Alice' };
+        const second = { ...shared, sender_id: 'bob', text: 'Texto do Bob' };
+        const channel = window.fixture.channels.at(-1);
+        [first, second, first, second].forEach(payload => channel.receive({ payload }));
+        window.fixture.history = [first, second];
+        channel.status('CHANNEL_ERROR'); channel.status('SUBSCRIBED');
+      });
+      await page.getByText('Texto da Alice', { exact: true }).waitFor();
+      await page.getByText('Texto do Bob', { exact: true }).waitFor();
+      assert.equal(await page.getByText('Texto da Alice', { exact: true }).count(), 1);
+      assert.equal(await page.getByText('Texto do Bob', { exact: true }).count(), 1);
+      assert.equal(await page.evaluate(() => window.stores.chat.getState().messages.length), 3);
     });
 
     await t.test('pending snapshot merges interleaved broadcasts once and retains existing messages', async () => {
@@ -368,6 +387,32 @@ test('isolated chat browser recovery and stale-response regressions', {
       assert.equal(await page.evaluate(() => window.stores.chat.getState().roomId), null);
       assert.equal(await page.evaluate(() => window.stores.chat.getState().isQueueing), false);
       assert.equal(new URL(page.url()).pathname, '/lobby');
+    });
+
+    await t.test('confirmed queue cancellation wins in both response orders and cancels the original intent', async () => {
+      for (const order of ['match-first', 'cancel-first']) {
+        await reset({ queue: true, matchMode: 'pending', leaveMode: 'pending' });
+        await page.waitForFunction(() => window.fixture.pending.some(p => p.type === 'find_or_join_match'));
+        const intent = await page.evaluate(() => window.stores.chat.getState().queueIntent);
+        await page.getByRole('button', { name: 'Voltar ao Lobby', exact: true }).click();
+        await page.waitForFunction(() => window.fixture.pending.some(p => p.type === 'leave_matchmaking'));
+        assert.equal(await page.evaluate(() => window.stores.chat.getState().queueCancelling), true);
+        const finishMatch = () => page.evaluate(() => window.fixture.pending.filter(p => p.type === 'find_or_join_match').forEach(p => p.finish(false,
+          { data: { ...window.fixture.serverRoom, server_now: new Date().toISOString() }, error: null, status: 200 })));
+        const finishCancel = () => page.evaluate(() => window.fixture.pending.filter(p => p.type === 'leave_matchmaking').forEach(p => p.finish()));
+        if (order === 'match-first') { await finishMatch(); await flush(); assert.equal(await page.evaluate(() => window.stores.chat.getState().roomId), null); await finishCancel(); }
+        else { await finishCancel(); await page.waitForURL('**/lobby'); await finishMatch(); }
+        await page.waitForURL('**/lobby'); await flush();
+        assert.equal(await page.evaluate(() => window.stores.chat.getState().roomId), null);
+        assert.equal(await page.evaluate(() => window.stores.chat.getState().queueIntent), null);
+        const args = await page.evaluate(() => window.fixture.calls.find(call => call.name === 'leave_matchmaking').args);
+        assert.deepEqual(args, { p_intent: intent.id, p_day: intent.day });
+      }
+      await reset({ queue: true, matchMode: 'matched' }); await ready();
+      const intent = await page.evaluate(() => window.stores.chat.getState().queueIntent);
+      await exit().click(); await page.waitForURL('**/lobby');
+      assert.deepEqual(await page.evaluate(() => window.fixture.calls.find(call => call.name === 'leave_matchmaking').args), { p_intent: intent.id, p_day: intent.day });
+      assert.ok(await page.evaluate(() => window.fixture.calls.some(call => call.name === 'leave_room')));
     });
 
     await t.test('pending operation permits local exit and same-ID replacement invalidates old completion', async () => {

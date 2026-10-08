@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
 import pg from 'pg';
 
@@ -12,6 +13,12 @@ const initialTime = '2026-10-02T21:30:00Z';
 const clockSQL = "SELECT set_config('unider.test_now', $1, false)";
 let clock = initialTime;
 let db, pool;
+const intents = new Map();
+const intent = user => {
+  if (!intents.has(user)) intents.set(user, randomUUID());
+  return intents.get(user);
+};
+const newIntent = user => { const value = randomUUID(); intents.set(user, value); return value; };
 const databaseUrl = process.env.UNIDER_TEST_DATABASE_URL;
 if (databaseUrl) {
   const url = new URL(databaseUrl);
@@ -41,6 +48,7 @@ async function at(time) {
   await db.query(clockSQL, [time]);
 }
 async function rpc(user, name, args = []) {
+  if (name === 'find_or_join_match' && args.length === 0) args = [intent(user), clock.slice(0, 10)];
   return (await as(user, `SELECT public.${name}(${args.map((_, i) => '$' + (i + 1)).join(',')}) AS value`, args))[0].value;
 }
 async function denied(action) { await assert.rejects(action); }
@@ -87,6 +95,43 @@ test('PostgreSQL roles, consent, room lifecycle and account deletion', async t =
     const patch = readFileSync('supabase/migrations/20261002231850_secure_chat_lifecycle.sql', 'utf8')
       .replace(/\bnow\(\)/g, 'public.test_now()');
     await db.exec(patch);
+
+    await t.test('A01 original direct INSERT self-approves a suggestion before the new migration', async () => {
+      await as(a, "INSERT INTO public.icebreaker_suggestions(user_id,suggestion,is_approved) VALUES($1,'Before fix self approval',true)", [a]);
+      assert.equal((await as(b, "SELECT count(*)::int AS n FROM public.icebreaker_suggestions WHERE suggestion='Before fix self approval'"))[0].n, 1);
+      // Broad per-column grants must also be revoked, not only table privileges.
+      await db.exec('GRANT INSERT(id,user_id,suggestion,is_approved,created_at), UPDATE(id,user_id,suggestion,is_approved,created_at), REFERENCES(id,user_id,suggestion,is_approved,created_at) ON public.icebreaker_suggestions TO PUBLIC, anon, authenticated');
+    });
+    for (const filename of readdirSync('supabase/migrations').filter(name => name > '20261002231850_secure_chat_lifecycle.sql' && name.endsWith('.sql')).sort()) {
+      await db.exec(readFileSync(`supabase/migrations/${filename}`, 'utf8').replace(/\bnow\(\)/g, 'public.test_now()'));
+    }
+
+    await t.test('A01 approval is admin-only across INSERT, NULL, upsert and inherited column grants', async () => {
+      for (const approval of [true, false, null]) {
+        await denied(() => as(a, 'INSERT INTO public.icebreaker_suggestions(user_id,suggestion,is_approved) VALUES($1,$2,$3)', [a, 'Forbidden approval field', approval]));
+      }
+      await denied(() => as(a, "INSERT INTO public.icebreaker_suggestions(user_id,suggestion) VALUES($1,'Forbidden impersonation')", [b]));
+      await denied(() => as(null, "INSERT INTO public.icebreaker_suggestions(user_id,suggestion) VALUES($1,'Anonymous insert')", [a], 'anon'));
+      await denied(() => as(a, "INSERT INTO public.icebreaker_suggestions(user_id,suggestion) VALUES($1,'Upsert new row') ON CONFLICT(id) DO UPDATE SET suggestion=excluded.suggestion", [a]));
+      await denied(() => as(a, 'UPDATE public.icebreaker_suggestions SET is_approved=true'));
+      await as(a, "INSERT INTO public.icebreaker_suggestions(user_id,suggestion) VALUES($1,'Ordinary pending suggestion')", [a]);
+      assert.equal((await as(b, "SELECT count(*)::int AS n FROM public.icebreaker_suggestions WHERE suggestion='Ordinary pending suggestion'"))[0].n, 0);
+      const row = (await db.query("SELECT id,is_approved FROM public.icebreaker_suggestions WHERE suggestion='Ordinary pending suggestion'")).rows[0];
+      assert.equal(row.is_approved, false);
+      await as(null, 'UPDATE public.icebreaker_suggestions SET is_approved=true WHERE id=$1', [row.id], 'service_role');
+      assert.equal((await as(b, 'SELECT count(*)::int AS n FROM public.icebreaker_suggestions WHERE id=$1', [row.id]))[0].n, 1);
+      await as(null, "INSERT INTO public.icebreaker_suggestions(suggestion,is_approved) VALUES('Administrative suggestion',true)", [], 'service_role');
+      for (const role of ['anon', 'authenticated']) {
+        for (const privilege of ['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) {
+          const allowed = (await db.query("SELECT has_table_privilege($1, 'public.icebreaker_suggestions', $2) AS allowed", [role, privilege])).rows[0].allowed;
+          assert.equal(allowed, false, `${role} table ${privilege}`);
+        }
+        for (const column of ['id', 'user_id', 'suggestion', 'is_approved', 'created_at']) for (const privilege of ['INSERT', 'UPDATE', 'REFERENCES']) {
+          const allowed = (await db.query("SELECT has_column_privilege($1, 'public.icebreaker_suggestions', $2, $3) AS allowed", [role, column, privilege])).rows[0].allowed;
+          assert.equal(allowed, role === 'authenticated' && privilege === 'INSERT' && ['user_id', 'suggestion'].includes(column), `${role} ${column} ${privilege}`);
+        }
+      }
+    });
 
     await t.test('fixed direct routes forbidden; service helper inaccessible to clients', async () => {
       await denied(() => as(c, 'INSERT INTO public.matchmaking_queue(user_id) VALUES($1)', [b]));
@@ -149,11 +194,13 @@ test('PostgreSQL roles, consent, room lifecycle and account deletion', async t =
     });
 
     await t.test('closed room no longer traps new chat; heartbeat expiry and lease pruning', async () => {
+      newIntent(a);
       assert.equal((await rpc(a, 'find_or_join_match')).status, 'waiting');
       const second = await rpc(c, 'find_or_join_match');
       assert.notEqual(second.room_id, room.room_id);
       await at('2026-10-02T21:32:46Z');
       assert.equal((await rpc(a, 'get_room_state', [second.room_id])).end_reason, 'disconnect');
+      newIntent(a); newIntent(b);
       await rpc(a, 'find_or_join_match');
       await at('2026-10-02T21:33:02Z');
       assert.equal((await rpc(b, 'find_or_join_match')).status, 'waiting');
@@ -161,10 +208,62 @@ test('PostgreSQL roles, consent, room lifecycle and account deletion', async t =
     });
 
     await t.test('outside session and after 22:48 cutoff denied on server', async () => {
+      newIntent(c);
       await at('2026-10-02T21:48:01Z');
       assert.equal((await rpc(c, 'find_or_join_match')).status, 'closed');
       await at('2026-10-02T20:00:00Z');
       assert.equal((await rpc(c, 'find_or_join_match')).status, 'closed');
+    });
+
+    await t.test('A02 cancellation wins before/after matching, new intent stays independent, and room leave is terminal', async () => {
+      await at(initialTime);
+      await db.query('UPDATE public.active_rooms SET ended_at=public.test_now() WHERE ended_at IS NULL');
+      await db.query('DELETE FROM public.matchmaking_queue');
+      const day = '2026-10-02', cancelled = randomUUID();
+      await rpc(a, 'leave_matchmaking', [cancelled, day]);
+      assert.equal((await rpc(a, 'find_or_join_match', [cancelled, day])).status, 'cancelled');
+      assert.equal((await db.query('SELECT count(*)::int AS n FROM public.matchmaking_queue WHERE user_id=$1', [a])).rows[0].n, 0);
+
+      const firstIntent = newIntent(a); newIntent(b);
+      assert.equal((await rpc(a, 'find_or_join_match')).status, 'waiting');
+      const firstRoom = await rpc(b, 'find_or_join_match');
+      await rpc(a, 'leave_matchmaking', [firstIntent, day]);
+      assert.equal((await rpc(a, 'find_or_join_match', [firstIntent, day])).status, 'cancelled');
+      assert.ok((await rpc(b, 'get_room_state', [firstRoom.room_id])).ended_at);
+      assert.equal((await rpc(b, 'find_or_join_match')).status, 'cancelled', 'Cancellation is terminal for both room intentions');
+
+      newIntent(a); newIntent(c);
+      await rpc(a, 'find_or_join_match');
+      const nextRoom = await rpc(c, 'find_or_join_match');
+      await rpc(a, 'leave_matchmaking', [firstIntent, day]);
+      assert.equal((await rpc(a, 'get_room_state', [nextRoom.room_id])).ended_at, null, 'Old cancellation cannot close a new intent room');
+      await rpc(a, 'leave_room', [nextRoom.room_id]);
+      assert.equal((await rpc(a, 'find_or_join_match')).status, 'cancelled', 'Late find after room exit is terminal too');
+      await denied(() => as(a, 'SELECT * FROM unider_private.matchmaking_intents'));
+      await denied(() => as(a, 'SELECT public.find_or_join_match()'));
+      await denied(() => as(a, 'SELECT public.leave_matchmaking()'));
+    });
+
+    await t.test('A04 missing room leave is idempotent, but an existing outsider room remains denied', async () => {
+      newIntent(b); newIntent(c);
+      await rpc(b, 'find_or_join_match');
+      const existing = await rpc(c, 'find_or_join_match');
+      await denied(() => rpc(a, 'leave_room', [existing.room_id]));
+      assert.equal((await rpc(b, 'get_room_state', [existing.room_id])).ended_at, null);
+      const purged = randomUUID();
+      await assert.doesNotReject(() => rpc(a, 'leave_room', [purged]));
+      await assert.doesNotReject(() => rpc(a, 'leave_room', [purged]));
+      await denied(() => as(null, 'SELECT public.leave_room($1)', [purged], 'anon'));
+      await rpc(b, 'leave_room', [existing.room_id]);
+    });
+
+    await t.test('A02 tombstones expire only when server day already rejects every old intent', async () => {
+      await at('2026-10-04T21:30:00Z');
+      await db.query('SELECT public.purge_old_reports()');
+      assert.equal((await db.query("SELECT count(*)::int AS n FROM unider_private.matchmaking_intents WHERE intent_day='2026-10-02'")).rows[0].n, 0);
+      assert.equal((await rpc(a, 'find_or_join_match', [intent(a), '2026-10-02'])).status, 'closed');
+      assert.equal((await db.query('SELECT count(*)::int AS n FROM public.matchmaking_queue WHERE user_id=$1', [a])).rows[0].n, 0);
+      await at(initialTime);
     });
 
     await t.test('deletion succeeds with retained reports, deleted JWT loses authority', async () => {
@@ -179,6 +278,7 @@ test('PostgreSQL roles, consent, room lifecycle and account deletion', async t =
       await at(initialTime);
       await db.query('UPDATE public.active_rooms SET ended_at=public.test_now() WHERE ended_at IS NULL');
       await db.query('DELETE FROM public.matchmaking_queue');
+      newIntent(b); newIntent(c);
       await rpc(b, 'find_or_join_match');
       const fresh = await rpc(c, 'find_or_join_match');
       await as(b, 'SELECT public.authorize_room($1,$2,$3)', [fresh.room_id, b, 'report'], 'service_role');
@@ -200,6 +300,7 @@ test('PostgreSQL roles, consent, room lifecycle and account deletion', async t =
         await at(initialTime);
         await db.query('UPDATE public.active_rooms SET ended_at=public.test_now() WHERE ended_at IS NULL');
         await db.query('DELETE FROM public.matchmaking_queue');
+        newIntent(b); newIntent(c);
         await rpc(b, 'find_or_join_match');
         await Promise.all(Array.from({ length: 32 }, (_, i) => rpc(i % 2 ? b : c, 'find_or_join_match')));
         const rows = (await db.query(`SELECT user_id, count(*)::int AS n FROM (
@@ -207,6 +308,24 @@ test('PostgreSQL roles, consent, room lifecycle and account deletion', async t =
           UNION ALL SELECT user_b FROM public.active_rooms WHERE ended_at IS NULL
         ) members GROUP BY user_id HAVING count(*) > 1`)).rows;
         assert.equal(rows.length, 0);
+      });
+
+    await t.test('A02 actual concurrent PostgreSQL cancellation fences delayed find and peer matching',
+      { skip: !pool && 'PGlite is single-connection; PostgreSQL proves the overlapping transactions' }, async () => {
+        await at(initialTime);
+        for (let attempt = 0; attempt < 12; attempt++) {
+          await db.query('UPDATE public.active_rooms SET ended_at=public.test_now() WHERE ended_at IS NULL');
+          await db.query('DELETE FROM public.matchmaking_queue');
+          const target = newIntent(b); newIntent(c);
+          if (attempt % 2) await rpc(b, 'find_or_join_match');
+          const actions = [() => rpc(b, 'leave_matchmaking', [target, '2026-10-02']),
+            () => rpc(b, 'find_or_join_match'), () => rpc(c, 'find_or_join_match')];
+          if (attempt % 3) actions.reverse();
+          await Promise.all(actions.map(run => run()));
+          assert.equal((await rpc(b, 'find_or_join_match')).status, 'cancelled');
+          assert.equal((await db.query('SELECT count(*)::int AS n FROM public.active_rooms WHERE ended_at IS NULL AND $1 IN (user_a,user_b)', [b])).rows[0].n, 0);
+          assert.equal((await db.query('SELECT count(*)::int AS n FROM public.matchmaking_queue WHERE user_id=$1', [b])).rows[0].n, 0);
+        }
       });
   } finally { if (pool) await pool.end(); else await db.close(); }
 });

@@ -5,7 +5,7 @@ const { clockSample, confirmedClock, requestClock, CLOCK_FRESH_MS } = load('src/
 const { getModeFromTime } = load('src/lib/lobbySchedule.ts');
 const { canJoinLobbyQueue, shouldEnterChat } = load('src/lib/lobbyQueue.ts');
 const { getLisbonDay } = load('src/utils/time.ts');
-const queue = { ownerId: 'alice', roomId: null, isQueueing: true, queueDay: '2026-10-05' };
+const queue = { ownerId: 'alice', roomId: null, isQueueing: true, queueDay: '2026-10-05', queueIntent: { id: '00000000-0000-0000-0000-000000000001', day: '2026-10-05' } };
 test('server clock bounds RTT/ISO/freshness/context and ignores skewed device day', () => {
   const sample = clockSample('2026-10-05T21:29:59.000Z', 'alice', 7, 0, 200);
   assert.equal(sample.rtt, 200);
@@ -28,7 +28,7 @@ test('confirmed server sample drives 22:28/22:30/22:48/22:50 and winter/summer q
       const now = confirmedClock(sample, 'alice', 1, 0);
       assert.equal(getModeFromTime(now), mode);
       assert.equal(canJoinLobbyQueue(queue, 'alice', true, now), join);
-      assert.equal(shouldEnterChat({ ...queue, queueDay: day }, 'alice', true, now), enter);
+      assert.equal(shouldEnterChat({ ...queue, queueDay: day, queueIntent: { ...queue.queueIntent, day } }, 'alice', true, now), enter);
     }
   }
 });

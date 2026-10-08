@@ -7,6 +7,7 @@ import type { ChatIssue } from '../lib/chatRecovery';
 import { getModeFromTime } from '../lib/lobbySchedule';
 import { useAuthStore } from '../store/authStore';
 import { useChatStore } from '../store/chatStore';
+import { matchIntentArgs } from '../lib/matchIntent';
 
 export function useChatSession() {
   const userId = useAuthStore(s => s.user?.id);
@@ -14,6 +15,8 @@ export function useChatSession() {
   const ownerId = useChatStore(s => s.ownerId);
   const contextVersion = useChatStore(s => s.contextVersion);
   const isQueueing = useChatStore(s => s.isQueueing);
+  const queueIntent = useChatStore(s => s.queueIntent);
+  const queueCancelling = useChatStore(s => s.queueCancelling);
   const [retryKey, setRetryKey] = useState(0);
   const [state, setState] = useState<{
     userId?: string; roomId: string | null; room: RoomState | null;
@@ -39,9 +42,10 @@ export function useChatSession() {
 
   useEffect(() => {
     const version = ++lifetime.current;
-    const valid = () => lifetime.current === version && current() && (Boolean(roomId) || useChatStore.getState().isQueueing === isQueueing);
+    const valid = () => lifetime.current === version && current() && (Boolean(roomId)
+      || useChatStore.getState().isQueueing === isQueueing && !useChatStore.getState().queueCancelling);
     let timer: ReturnType<typeof setTimeout>;
-    if (!userId || ownerId !== userId || (!roomId && !isQueueing)) return;
+    if (!userId || ownerId !== userId || (!roomId && (!isQueueing || !queueIntent || queueCancelling))) return;
     const fail = (error: unknown, status?: number) => {
       const issue = classifyChatError(error, status);
       setState(previous => ({ ...previous, userId, roomId, error: issue, checkedAt: 0 }));
@@ -50,7 +54,7 @@ export function useChatSession() {
     const poll = async () => {
       let again = true;
       try {
-        const request = roomId ? supabase.rpc('get_room_state', { p_room: roomId }) : supabase.rpc('find_or_join_match');
+        const request = roomId ? supabase.rpc('get_room_state', { p_room: roomId }) : supabase.rpc('find_or_join_match', matchIntentArgs(queueIntent!));
         const { data, error: rpcError, status } = await request.abortSignal(AbortSignal.timeout(10000));
         if (!valid()) return;
         if (rpcError) {
@@ -60,7 +64,7 @@ export function useChatSession() {
             useChatStore.getState().setRoom(data.room_id, data.peer_id);
             useChatStore.getState().addPastPartner(data.peer_id);
           } else applyRoom(data);
-        } else if (!roomId && data?.status === 'closed') {
+        } else if (!roomId && (data?.status === 'closed' || data?.status === 'cancelled')) {
           setState({ userId, roomId, room: null, error: null, checkedAt: 0, offset: 0, closedQueue: true });
           useChatStore.getState().setQueueing(false);
           return;
@@ -76,7 +80,7 @@ export function useChatSession() {
     };
     void poll();
     return () => { lifetime.current += 1; clearTimeout(timer); };
-  }, [userId, ownerId, roomId, isQueueing, applyRoom, current, retryKey]);
+  }, [userId, ownerId, roomId, isQueueing, queueIntent, queueCancelling, applyRoom, current, retryKey]);
 
   const same = state.userId === userId && state.roomId === roomId && ownerId === userId;
   const room = same ? state.room : null;
@@ -86,6 +90,8 @@ export function useChatSession() {
     && Date.now() - state.checkedAt >= 0 && Date.now() - state.checkedAt < 10000 ? new Date(Date.now() + state.offset) : null;
   const canFindNext = () => { const time = confirmedRoomTime(); return Boolean(time && getModeFromTime(time) === 'ACTIVE'); };
   const status = state.closedQueue && same ? 'Já não são permitidas novas conversas hoje.'
+    : !roomId && queueCancelling ? 'A saída da fila está por confirmar. Podes tentar novamente.'
+    : isQueueing && !queueIntent ? 'Prepara uma nova entrada no lobby.'
     : isQueueing ? 'A aguardar pelo próximo colega...' : roomId ? 'A confirmar a conversa...' : 'Não há conversa em curso.';
   return { room, status, error, applyRoom, retry: () => setRetryKey(key => key + 1), canFindNext, confirmedRoomTime,
     newPairsAvailable: fresh && getModeFromTime(new Date(now + state.offset)) === 'ACTIVE',

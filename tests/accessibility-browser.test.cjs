@@ -42,6 +42,7 @@ test('browser keyboard: modal isolation, required consent, restoration and compa
   const api = `
     export const supabase = {
       from() { const query = { select() { return query; }, eq() { return query; },
+        abortSignal() { return query; },
         single() { return Promise.resolve({ data: { terms_version: window.fixture.terms === 'accepted' ? '1.1' : null }, error: null }); } }; return query; },
       rpc(name, args) {
         window.fixture.calls.push({ name, args });

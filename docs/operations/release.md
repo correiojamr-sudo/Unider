@@ -84,6 +84,38 @@ Em falha, impedir novas correspondências pelo mecanismo autorizado e corrigir
 em frente. Não restaurar permissões inseguras, broadcasts cliente ou inserção
 direta de denúncias para fazer o frontend antigo funcionar.
 
+## Publicação futura das correções A01–A04
+
+O candidato local de 08/10 acrescenta a migration
+`20261006141924_secure_suggestions_and_match_intents.sql`. Não foi aplicada num
+serviço. É incompatível com os RPCs antigos sem argumentos de emparelhamento:
+o novo frontend envia `p_intent` e `p_day` tanto na entrada como no cancelamento.
+O novo contrato de mensagens usa `(sender_id, id)` no histórico e na interface.
+
+Quando houver autorização específica, confirmar primeiro projeto/histórico e
+backup, reconciliando o bootstrap consolidado acima sem reaplicar migrations
+históricas. Preparar a publicação fora da janela de conversas e suspender novas
+entradas pelo mecanismo autorizado. A migration preserva as tabelas públicas,
+acrescenta metadados privados de intenção e restringe INSERT de sugestões a
+`user_id`/`suggestion`; aprovação administrativa continua a usar autoridade
+servidor. Salas existentes não são reabertas nem prolongadas pela migration.
+Entradas antigas da fila sem intenção são descartadas na próxima reconciliação.
+
+Aplicar apenas esta migration sobre a base confirmada, publicar
+`get-room-messages` com JWT mantido e publicar o frontend correspondente como
+uma sequência coordenada. Evitar misturar clientes/RPCs de versões diferentes:
+clientes antigos falham na entrada/cancelamento após a remoção dos RPCs antigos;
+clientes novos falham contra schema antigo. Validar INSERT comum, tentativa de
+autoaprovação, aprovação administrativa/leitura, cancelamento nas duas ordens,
+retry tardio, nova intenção, logout após purga e mensagens com UUID igual entre
+participantes em sessões reais autorizadas.
+
+Em falha, conservar entradas suspensas e corrigir em frente. Não reintroduzir
+os RPCs antigos nem permissões de aprovação cliente como rollback de conveniência.
+Um restauro de backup exige plano separado e autorizado, incluindo efeitos em
+denúncias/contas recebidas entretanto. O [registo local A01–A04](../validation/2026-10-08-backend-findings-fixes.md)
+descreve evidência e limites; não autoriza deploy nem certifica serviços alojados.
+
 ## Email e entrada de teste
 
 A existência de um domínio não configura SMTP por si só. Decidir domínio,

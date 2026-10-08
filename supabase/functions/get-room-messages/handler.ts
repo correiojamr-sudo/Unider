@@ -41,8 +41,9 @@ export async function getRoomMessages(req: Request, deps: Dependencies) {
       }
       const message = { id: m.id.toLowerCase(), sender_id: m.sender_id as string, text: m.text, timestamp: m.timestamp };
       const serialized = JSON.stringify(message);
-      if (seen.has(message.id) && seen.get(message.id) !== serialized) throw new HttpError(503, 'Invalid buffer');
-      seen.set(message.id, serialized);
+      const key = `${message.sender_id}:${message.id}`;
+      if (seen.has(key) && seen.get(key) !== serialized) throw new HttpError(503, 'Invalid buffer');
+      seen.set(key, serialized);
       return message;
     });
     const confirmedRoom = await authorize(deps, roomId, userId, 'message');

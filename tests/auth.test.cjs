@@ -124,6 +124,35 @@ test('successful logout clears context; confirmed deletion skips leave RPCs', as
   assert.equal(f.chat.getState().roomId, null); assert.equal(f.chat.getState().isQueueing, false);
 });
 
+test('logout with a purged room succeeds only on idempotent server success, never on denial or transport error', async () => {
+  const ok = authFixture();
+  ok.replies.set('leave_room', Promise.resolve({ data: null, error: null }));
+  assert.equal(await ok.auth.getState().signOut(), true);
+  assert.deepEqual(ok.calls, ['leave_room', 'signOut']);
+  assert.equal(ok.auth.getState().session, null);
+  for (const failure of [{ code: '42501' }, new TypeError('offline')]) {
+    const f = authFixture();
+    f.replies.set('leave_room', Promise.resolve({ data: null, error: failure }));
+    assert.equal(await f.auth.getState().signOut(), false);
+    assert.deepEqual(f.calls, ['leave_room']);
+    assert.equal(f.chat.getState().roomId, 'room-a');
+    assert.equal(f.auth.getState().user.id, 'alice');
+  }
+});
+
+test('logout cancels the stored match intent before Auth and fences automatic matching on failure', async () => {
+  const f = authFixture(); f.chat.getState().resetChat(); f.chat.getState().setQueueing(true);
+  const pending = deferred(); f.replies.set('leave_matchmaking', pending.promise);
+  const work = f.auth.getState().signOut();
+  assert.equal(f.chat.getState().queueCancelling, true);
+  pending.resolve({ error: { code: '08006' } });
+  assert.equal(await work, false); assert.deepEqual(f.calls, ['leave_matchmaking']);
+  assert.equal(f.chat.getState().queueCancelling, true);
+  f.replies.set('leave_matchmaking', Promise.resolve({ error: null }));
+  assert.equal(await f.auth.getState().signOut(), true);
+  assert.deepEqual(f.calls, ['leave_matchmaking', 'leave_matchmaking', 'signOut']);
+});
+
 test('a fresh session for the same user invalidates a pending logout', async () => {
   const f = authFixture(); const pending = deferred();
   f.replies.set('leave_room', pending.promise);

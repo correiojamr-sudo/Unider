@@ -24,12 +24,14 @@ manifesto/service worker que demonstre essa funcionalidade completa.
 | `src/components/modals/` | Termos e definições; não são páginas com rota própria. |
 | `src/components/modals/ModalFrame.tsx`, `src/hooks/useModalAccessibility.ts` | Semântica de diálogo, foco, isolamento do fundo e reposição do foco. |
 | `src/hooks/useChatSession.ts` | Polling RPC, relógio da sala e recuperação de estado. |
-| `src/hooks/useChatHistory.ts`, `src/lib/chatHistory.ts` | Snapshot após subscrição, validação/fusão por ID e descarte de respostas antigas. |
+| `src/hooks/useChatHistory.ts`, `src/lib/chatHistory.ts` | Snapshot após subscrição, validação/fusão por remetente+ID e descarte de respostas antigas. |
 | `src/hooks/useTimeSync.ts`, `src/lib/serverClock.ts` | Amostra autenticada de hora, RTT, validade/contexto e relógio monotónico do lobby. |
 | `src/lib/chatSession.ts` | Tipo `RoomState` e cálculo puro da fase/tempo restante. |
 | `src/lib/chatRecovery.ts`, `src/lib/chatOperations.ts` | Classificação estruturada de falhas e guardas de operações no contexto atual. |
 | `src/lib/lobbySchedule.ts`, `src/lib/lobbyQueue.ts` | Eventos/contagens de Lisboa e guardas da intenção local de espera. |
+| `src/lib/matchIntent.ts` | UUID/dia persistidos e argumentos do contrato de emparelhamento/cancelamento. |
 | `src/lib/lobbySuggestion.ts` | Distingue confirmação de envio, resposta de erro e exceção. |
+| `src/lib/lobbyRequest.ts` | Limita a espera de termos/sugestões e passa o cancelamento ao transporte SDK. |
 | `src/lib/authOperations.ts`, `src/hooks/useAuthOperation.ts` | Normalização, erros públicos e guardas de operações de autenticação/consentimento. |
 | `src/lib/authSession.ts` | Arranque de sessão, cliente Auth delimitado e confirmação de alterações no armazenamento. |
 | `src/lib/supabase.ts` | Cliente público Supabase configurado pelas variáveis Vite. |
@@ -91,8 +93,15 @@ A pré-fila do lobby é apenas intenção local: `isQueueing` e `queueDay` persi
 no `sessionStorage`, associados a `ownerId`. Refresh no mesmo dia mantém essa
 intenção; cancelar, reset, mudar de proprietário ou receber uma sala limpa-a.
 Sem data, noutro dia ou fora de 22:28–22:48, não há entrada automática no lobby.
-Um contexto antigo sem `queueDay` exige preparar novamente a entrada. Não é
+Um contexto antigo sem `queueDay`/`queueIntent` exige preparar novamente a entrada. Não é
 descartada uma sala guardada para limpar a fila.
+
+`queueIntent` guarda um UUID e o dia servidor da entrada. Mantém-se após encontrar
+sala para permitir cancelamento inequívoco. O servidor regista a intenção e a
+sala encontrada; um cancelamento anterior ao primeiro pedido de entrada fica
+registado e bloqueia esse pedido quando chegar. O dia servidor impede replay
+de intenções antigas depois da limpeza periódica dos metadados. Uma entrada nova
+usa outro UUID. Estes campos não substituem identidade JWT, termos ou horários.
 
 Às 22:30, intenção válida e consentimento confirmado para o utilizador atual
 permitem navegar para o chat, onde o RPC pede o emparelhamento. O lobby não cria
@@ -115,9 +124,20 @@ da intenção de fila. É sempre possível cancelar a espera ou voltar à sala g
 ancorados a `get_room_state`, nunca à Function de apresentação. Esta estimativa
 não concede autorização e pode ter erro de rede/relógio entre camadas.
 
-Uma sugestão só apresenta sucesso após resposta sem erro do INSERT. Erro ou
-exceção mantém o texto e permite tentar novamente; respostas de uma instância
-desmontada ou de outro utilizador não alteram o formulário atual.
+A leitura dos termos e o INSERT de sugestões têm um limite de 10 segundos,
+definido por `AUTH_TIMEOUT_MS`. `lobbyRequest` combina timeout e controller de
+cancelamento, passa o sinal ao SDK e termina a espera da interface mesmo se o
+transporte continuar pendente. Falha na leitura disponibiliza «Verificar termos»;
+uma revisão Auth nova volta a verificar consentimento, mesmo para o mesmo ID.
+
+Uma sugestão só apresenta sucesso após resposta sem erro do INSERT. Erro,
+exceção ou timeout mantém o texto e permite envio explícito posterior; não há
+repetição automática do POST. A interface informa que a sugestão pode já ter
+sido recebida: abortar não desfaz uma escrita servidor. Respostas antigas não
+alteram o formulário nem a leitura dos termos após substituição de pedido,
+desmontagem, mudança de utilizador ou revisão Auth. Renovar a sessão do mesmo
+utilizador liberta o formulário e conserva o rascunho; mudar de utilizador
+monta um formulário novo. Ver [validação A05](validation/2026-10-08-lobby-request-fixes.md).
 
 ### Saída e recuperação da conversa
 
@@ -127,6 +147,14 @@ Só limpa o contexto após confirmação sem erro de `leave_room` ou
 «Voltar ao lobby sem confirmar fecho» limpa apenas o contexto do separador,
 incluindo a intenção de fila; informa que não confirma fecho nem guarda uma
 denúncia pendente. Falhas transitórias não descartam sala, mensagens ou retry.
+
+Chat, cancelamento no lobby e logout suspendem a intenção antes de pedir
+`leave_matchmaking` com UUID/dia; respostas de emparelhamento já emitidas deixam
+de alterar a interface. Cancelamento falhado permanece suspenso e repetível após
+refresh. A confirmação não é descartada por um match tardio. O servidor serializa
+cancelamento/match e fecha a sala associada, sem fechar uma sala de intenção nova.
+`leave_room` termina também as intenções da sala; se esta já foi purgada, a saída
+é idempotente. Uma referência a sala existente de terceiro continua recusada.
 
 O hook classifica falhas por código SQL/PostgREST e status HTTP, sem inferir
 encerramento a partir do texto. Recusas de acesso suspendem o polling automático;
@@ -146,12 +174,13 @@ a um contexto novo. Este contador local não concede autorização.
 `Chat` subscreve `room:<uuid>` privado e chama `send-message` por HTTP. A Function
 verifica Auth/membership, obtém lock, acrescenta ao Redis com deduplicação Lua e
 publica o broadcast privado pelo servidor. O browser adiciona o resultado
-confirmado e deduplica a receção pelo ID. Num retry do mesmo conteúdo mantém o ID.
+confirmado e deduplica a receção por `(sender_id, id)`. Num retry do mesmo conteúdo
+mantém o ID; um UUID igual usado pelo outro participante identifica outra mensagem.
 
 Após cada transição para `SUBSCRIBED`, `useChatHistory` pede `get-room-messages`.
 A receção já está instalada antes da leitura: broadcasts recebidos durante o
-pedido são fundidos com o snapshot no estado atual, preservando IDs conhecidos
-e ordenando por timestamp/ID. Cancelamento de subscrição, mudança de identidade,
+pedido são fundidos com o snapshot no estado atual, preservando chaves conhecidas
+e ordenando por timestamp/remetente/ID. Cancelamento de subscrição, mudança de identidade,
 sala ou `contextVersion` invalidam respostas pendentes. Não há polling adicional;
 um erro permite retry manual e mantém as mensagens conhecidas e a saída/denúncia.
 
