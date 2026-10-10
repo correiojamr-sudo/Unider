@@ -1,5 +1,75 @@
 # Estado e trabalho pendente
 
+## Candidato para revisão no GitHub — 10/10/2026
+
+[Certain] O proprietário autorizou commit, push e PR das alterações locais
+B01 e da preparação legal/marca Aquecimento. PR #8 confirmado integrado em
+`main` (`c48958440deb47f56c9484e1c872b4a5e8c6280e`), com conteúdo igual à base
+local `d32f451`. A publicação usa a branch existente
+`fix/unider-functional-recovery`, sem rebase, merge ou mudança de branch.
+
+Novo PR deve ser rascunho: testes locais aprovados não resolvem as pendências
+jurídicas nem a validação alojada. Commit com `[CF-Pages-Skip]` para evitar o
+preview Pages automático; GitHub Actions não é desativado. Não está autorizado
+merge, deploy, SQL alojado ou mudança de URL/configuração. Os registos abaixo
+descrevem as entregas locais anteriores a este pedido de publicação; verificar
+o PR e o seu CI para saber o estado da publicação, não inferir pelo histórico.
+
+## Preparação legal e marca Aquecimento — 10/10/2026
+
+[Certain] Responsável/contacto indicados pelo proprietário; acesso só a maiores
+de 18 anos. Termos/privacidade 2.0 preparados numa fonte partilhada, com páginas
+públicas, regras e retenções. Login/modal pedem declaração; migration nova
+`20261010145007_adult_terms_v2.sql` regista-a no servidor e exige-a na elegibilidade,
+sem atribuí-la às contas antigas. Marca visível, título e favicon passam a
+Aquecimento no código local.
+
+Não é prova de idade nem certificação de conformidade. Fechar fornecedores,
+transferências, logs/backups, conteúdo sensível/denúncias, ponderação e
+procedimentos descritos na [preparação jurídica](legal-readiness.md) antes de
+publicar. Nenhuma alteração remota, commit, push ou deploy. Identificadores
+técnicos/históricos e nomes de pasta, GitHub e serviços são preservados.
+Validação desta entrega: **104 testes passaram, zero falhas, dois excluídos**
+no gate com as cinco fixtures Chrome. Os dois cenários de concorrência passaram
+na execução separada em PostgreSQL 18.6 local: **19 testes, zero falhas/exclusões**.
+Lint, build, Deno das quatro Functions e links documentais passaram. Build com
+configuração pública sintética, não publicável. Ver detalhes/limites na
+[preparação jurídica](legal-readiness.md).
+
+## Mudança de nome pendente — 10/10/2026
+
+[Certain] O proprietário pediu para registar a substituição do nome **Unider**
+por **Aquecimento**, com inicial maiúscula. Marca pública preparada localmente
+na entrega acima; identificadores/serviços ainda pendentes. Âmbito:
+rever todas as referências atuais na interface, metadados, textos de email,
+termos de utilização, política de privacidade, documentação e nomes técnicos.
+Inventariar também pasta local, repositório GitHub e serviços externos antes
+de planear a mudança dos respetivos nomes, URLs ou identificadores.
+
+Não fazer uma substituição cega: preservar migrations aplicadas e referências
+históricas; verificar contratos, links e configurações dependentes dos nomes
+atuais. Alterações remotas exigem autorização específica. Critério de aceitação:
+marca atual coerente como «Aquecimento», referências antigas restantes
+justificadas e verificações relevantes aprovadas. Este registo não renomeia
+código, pasta, repositório ou serviços.
+
+## Revisão complementar de 08/10 — B01 corrigido localmente
+
+[Certain] Revisão de `d32f451fcca016ca8753b56da94f1b1587d61579`, sem corrigir
+código nem alterar serviços. O [relatório complementar](validation/2026-10-08-followup-review.md)
+regista **B01 (P2)**: o encerramento automático tardio desloca a janela de
+denúncia; reproduzido em SQL local com controlo negativo. **O01 (P3)**: estilos
+e assets do template sem referências, dívida de organização sem falha funcional
+demonstrada. B01 foi depois corrigido a pedido do proprietário, com a migration
+nova `20261008181527_deterministic_room_end.sql`: fim efetivo e prazo de denúncia
+independentes de consulta tardia, incluindo linhas encerradas pelo código antigo.
+O01 mantém-se de baixa prioridade e não foi alterado. As correções A01–A05 abaixo
+mantêm o seu estado. Validação B01: 102 testes passaram, dois testes concorrentes
+excluídos em PGlite; os 19 testes de base passaram em PostgreSQL 18.6 local,
+incluindo concorrência. Lint, build e Deno das quatro Functions passaram.
+Nenhuma migration alojada, commit, push ou
+deploy nesta correção; a publicação continua pendente.
+
 ## Correções A01–A05 aceites localmente em 08/10/2026
 
 Revisão de `5fcd34b4eaa6b5cd4fa8681817128a4c6bdfb33f`, a pedido do proprietário,

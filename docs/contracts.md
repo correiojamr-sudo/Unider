@@ -6,6 +6,12 @@ descreve o código; não comprova o estado de uma instalação alojada.
 
 ## Entrada e sessão no cliente
 
+A versão legal preparada é 2.0; a migration incremental
+`20261010145007_adult_terms_v2.sql` ainda não foi aplicada ao serviço alojado.
+`eligible` exige versão atual, data de aceitação e declaração de maioridade,
+além de conta não banida. O RPC antigo de um argumento deixa de estar concedido
+ao cliente. A declaração não comprova idade. Termos/privacidade são rotas públicas.
+
 O login envia o endereço institucional completo após `trim` e conversão para
 minúsculas. A verificação usa `verifyOtp({ email, token, type: 'email' })` com
 o destinatário do pedido confirmado, não um campo entretanto alterado. Aceita
@@ -49,7 +55,7 @@ email, ID de utilizador nem uma notificação `SIGNED_OUT` de origem antiga.
 
 | Operação | Entrada | Resultado/função |
 | --- | --- | --- |
-| `accept_terms` | `p_version: '1.1'` | `true`; guarda consentimento/hora no servidor. |
+| `accept_terms` | `p_version: '2.0'`, `p_adult: true` | `true`; guarda versão, data e `adult_declared_at` no servidor. |
 | `find_or_join_match` | `p_intent: uuid`, `p_day: date` | `waiting`, `closed`, `cancelled` ou objeto `matched`; intenção da entrada no separador. |
 | `get_room_state` | `p_room: uuid` | `RoomState`; valida membership e renova heartbeat. |
 | `get-server-time` (Function) | `POST {}` com JWT de utilizador | `{ server_now: ISO UTC canónico }`; apenas apresentação, sem mutações. |
@@ -123,11 +129,23 @@ Os RPCs continuam a decidir os horários, elegibilidade e membership no servidor
 | Mensagem / quota por sala | Até 2.000 caracteres / 200 IDs no hash de deduplicação. |
 | Lock Redis | `SET NX EX 60`; release apenas com o token proprietário. |
 | Buffer / metadados Redis | 300 / 600 segundos desde append novo aceite. |
-| Janela de denúncia | 5 minutos após o limite calculado por `authorize_room`. |
+| Janela de denúncia | 5 minutos após o fim efetivo: o primeiro entre encerramento registado, prazo da sala (incluindo decisão inicial), heartbeat + 45 s e fecho absoluto. |
 | Retenção SQL | Denúncias elegíveis após 30 dias; salas após `hard_close_at` + 1 dia. |
 | Limpeza agendada no schema | A cada 5 minutos; falhas podem exceder a retenção operacional. |
 
 Chaves Redis: `room:<uuid>:lock`, `room:<uuid>:messages`, `room:<uuid>:dedup`.
+
+B01 acrescenta `unider_private.room_end_limit` na migration
+`20261008181527_deterministic_room_end.sql`. O encerramento automático guarda o
+limite efetivo já ultrapassado, em vez da hora de uma consulta tardia. A denúncia
+usa esse limite mesmo para salas encerradas pelo helper anterior; não reescreve
+histórico nem prova persistida. Encerramentos explícitos anteriores aos limites
+mantêm a sua hora. O prazo inicial inclui a decisão de 30 segundos, a extensão
+não tem nova decisão e o heartbeat termina após 45 segundos. A fronteira da
+denúncia mantém a comparação existente: aceita até ao limite + 5 minutos
+inclusivo, recusa depois. Uma recusa que faça rollback do refresh não altera
+esse cálculo num retry. Ver [correção B01](validation/2026-10-08-followup-review.md#correção-b01--validação-local).
+
 Retry com a mesma chave `(sender_id, id)` já aceite não renova os TTLs. Essa chave
 composta identifica também snapshots, fusão cliente e elementos React: dois
 participantes podem usar o mesmo UUID e ambas as mensagens são apresentadas.

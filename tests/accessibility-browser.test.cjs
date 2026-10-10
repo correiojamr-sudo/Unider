@@ -43,7 +43,7 @@ test('browser keyboard: modal isolation, required consent, restoration and compa
     export const supabase = {
       from() { const query = { select() { return query; }, eq() { return query; },
         abortSignal() { return query; },
-        single() { return Promise.resolve({ data: { terms_version: window.fixture.terms === 'accepted' ? '1.1' : null }, error: null }); } }; return query; },
+        single() { return Promise.resolve({ data: { terms_version: window.fixture.terms === 'accepted' ? '2.0' : null }, error: null }); } }; return query; },
       rpc(name, args) {
         window.fixture.calls.push({ name, args });
         if (name === 'accept_terms' && window.fixture.accept) window.fixture.terms = 'accepted';
@@ -85,10 +85,10 @@ test('browser keyboard: modal isolation, required consent, restoration and compa
     const focused = async locator => assert.equal(await locator.evaluate(element => element === document.activeElement), true);
     const noOverflow = async () => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.goto(origin);
-    assert.equal(await page.title(), 'Unider');
+    assert.equal(await page.title(), 'Aquecimento');
     assert.equal(await page.locator('html').getAttribute('lang'), 'pt-PT');
     const favicon = await context.request.get(origin + '/favicon.svg');
-    assert.equal(favicon.status(), 200); assert.match(await favicon.text(), /<title>Unider<\/title>/);
+    assert.equal(favicon.status(), 200); assert.match(await favicon.text(), /<title>Aquecimento<\/title>/);
     const trigger = page.getByRole('button', { name: 'Definições', exact: true });
     await page.getByRole('textbox', { name: 'Sugestão de quebra-gelo' }).waitFor();
     await page.getByRole('button', { name: 'Terminar sessão' }).waitFor();
@@ -124,17 +124,20 @@ test('browser keyboard: modal isolation, required consent, restoration and compa
     const terms = page.getByRole('dialog', { name: 'Termos de Utilização' });
     await terms.waitFor(); await focused(page.getByRole('heading', { name: 'Termos de Utilização' }));
     const accept = page.getByRole('button', { name: 'Aceitar e Continuar' });
-    await page.keyboard.press('Shift+Tab'); await focused(accept);
+    assert.equal(await accept.isDisabled(), true);
+    await page.keyboard.press('Shift+Tab'); await focused(terms.getByRole('checkbox'));
     await page.keyboard.press('Tab'); await focused(page.getByRole('region', { name: 'Texto dos termos' }));
-    await page.keyboard.press('Tab'); await focused(accept);
+    await page.keyboard.press('Tab'); await focused(terms.getByRole('link'));
+    await page.keyboard.press('Tab'); await focused(terms.getByRole('checkbox'));
+    await terms.getByRole('checkbox').check();
     await page.keyboard.press('Escape'); assert.equal(await terms.count(), 1);
     await page.mouse.click(1, 1); assert.equal(await terms.count(), 1);
     assert.deepEqual(await page.evaluate(() => window.fixture.calls), []);
     await accept.click(); await terms.getByRole('alert').waitFor(); assert.equal(await terms.count(), 1);
-    await page.evaluate(() => { window.fixture.accept = true; }); await accept.click();
+    await page.evaluate(() => { window.fixture.accept = true; }); await terms.getByRole('checkbox').check(); await accept.click();
     await terms.waitFor({ state: 'detached' }); await focused(close);
     await page.keyboard.press('Escape'); await focused(trigger);
-    assert.deepEqual(await page.evaluate(() => window.fixture.calls.map(call => call.args)), [{ p_version: '1.1' }, { p_version: '1.1' }]);
+    assert.deepEqual(await page.evaluate(() => window.fixture.calls.map(call => call.args)), [{ p_version: '2.0', p_adult: true }, { p_version: '2.0', p_adult: true }]);
 
     // Actual Lobby consent gate also survives Escape and does not create queue intent.
     await page.evaluate(() => {
@@ -147,7 +150,7 @@ test('browser keyboard: modal isolation, required consent, restoration and compa
     assert.equal(await page.locator('#root button').filter({ hasText: 'Preparar entrada às 22h30' }).isDisabled(), true);
     await noOverflow();
     const box = await terms.boundingBox(); assert.ok(box.y >= 0 && box.y + box.height <= 568);
-    await page.evaluate(() => { window.fixture.accept = true; }); await accept.click();
+    await page.evaluate(() => { window.fixture.accept = true; }); await terms.getByRole('checkbox').check(); await accept.click();
     await terms.waitFor({ state: 'detached' });
     await page.evaluate(() => window.fixture.render('login'));
     await page.getByRole('textbox', { name: 'Email Institucional' }).waitFor();

@@ -13,6 +13,7 @@ import { matchIntentArgs } from '../lib/matchIntent';
 import { LogOut, Clock, Send, Users, Settings } from 'lucide-react';
 import TermsModal from '../components/modals/TermsModal';
 import SettingsModal from '../components/modals/SettingsModal';
+import { TERMS_VERSION } from '../lib/legal';
 
 type TermsStatus = 'checking' | 'required' | 'accepted' | 'error';
 
@@ -64,7 +65,7 @@ function LobbyContent() {
         const { data, error } = await lobbyRequest(controller, signal => supabase.from('profiles')
           .select('terms_version').eq('id', userId).abortSignal(signal).single());
         if (current()) {
-          setTerms({ userId, revision: sessionRevision, status: error || !data ? 'error' : data.terms_version === '1.1' ? 'accepted' : 'required' });
+          setTerms({ userId, revision: sessionRevision, status: error || !data ? 'error' : data.terms_version === TERMS_VERSION ? 'accepted' : 'required' });
         }
       } catch {
         if (current()) setTerms({ userId, revision: sessionRevision, status: 'error' });
@@ -190,7 +191,7 @@ function LobbyContent() {
         <SettingsModal onClose={() => setShowSettings(false)} />
       )}
       <header className="w-full flex justify-between items-center py-2">
-        <h1 className="text-xl font-bold tracking-tight">UNIDER</h1>
+        <h1 className="text-xl font-bold tracking-tight">Aquecimento</h1>
         <div className="flex gap-2">
           <button aria-label="Definições" onClick={() => setShowSettings(true)} className="p-2 text-slate-400 hover:text-white transition-colors">
             <Settings className="w-5 h-5" />
@@ -294,7 +295,7 @@ function LobbyContent() {
 
       <footer className="w-full max-w-sm mt-auto pt-8 pb-4 text-center">
         <p className="text-[10px] text-slate-400 leading-tight">
-          O UNIDER é um projeto independente desenvolvido por estudantes e não possui qualquer afiliação, vínculo institucional, endosso ou suporte oficial por parte da Universidade de Coimbra.
+          O Aquecimento é independente e não tem afiliação, vínculo institucional, aprovação, endosso ou suporte oficial da Universidade de Coimbra.
         </p>
       </footer>
     </div>

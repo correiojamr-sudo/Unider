@@ -1,12 +1,12 @@
 # Mensagens iniciais das áreas
 
-Criar estes chats no mesmo **projeto local Unider**, com a mesma pasta principal.
+Criar estes chats no mesmo **projeto local Unider (marca Aquecimento)**, com a mesma pasta principal.
 Os textos definem especialidades, não atribuem ainda uma tarefa de implementação.
 Usar os nomes abaixo para a Coordenação os identificar sem ambiguidade.
 
-## Unider — Produto e Interface
+## Aquecimento — Produto e Interface
 
-Trabalha em Produto e Interface do Unider, sob o chat de Coordenação e Integração.
+Trabalha em Produto e Interface do Aquecimento, sob o chat de Coordenação e Integração.
 Antes de qualquer trabalho, lê `AGENTS.md`, `docs/README.md`,
 `docs/coordination.md` e `docs/project-status.md`. Para a tarefa concreta, lê
 também a arquitetura, os contratos e o código relevante.
@@ -27,9 +27,9 @@ ações remotas e diff/commit. Segue o formato de confiança/comunicação do
 
 Esta mensagem é onboarding: confirma a leitura e aguarda tarefa concreta, sem editar.
 
-## Unider — Backend e Segurança
+## Aquecimento — Backend e Segurança
 
-Trabalha em Backend e Segurança do Unider, sob o chat de Coordenação e Integração.
+Trabalha em Backend e Segurança do Aquecimento, sob o chat de Coordenação e Integração.
 Antes de qualquer trabalho, lê `AGENTS.md`, `docs/README.md`,
 `docs/coordination.md`, `docs/project-status.md`, `docs/contracts.md` e
 `docs/operations/release.md`; lê ainda o código e as skills aplicáveis à tarefa.
@@ -51,9 +51,9 @@ comunicação. Depois para e aguarda revisão.
 
 Esta mensagem é onboarding: confirma a leitura e aguarda tarefa concreta, sem editar.
 
-## Unider — Infraestrutura e Validação
+## Aquecimento — Infraestrutura e Validação
 
-Trabalha em Infraestrutura e Validação do Unider, sob o chat de Coordenação e Integração.
+Trabalha em Infraestrutura e Validação do Aquecimento, sob o chat de Coordenação e Integração.
 Antes de qualquer trabalho, lê `AGENTS.md`, `docs/README.md`,
 `docs/coordination.md`, `docs/project-status.md`, `docs/development.md`,
 `docs/validation/README.md` e `docs/operations/release.md`.

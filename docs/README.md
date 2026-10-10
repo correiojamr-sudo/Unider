@@ -1,15 +1,20 @@
-# Guia de leitura do Unider
+# Guia de leitura do Aquecimento
 
 Este índice é o ponto de entrada para entender o código e trabalhar sem perder
 os contratos entre interface, servidor e serviços externos.
 
 ## Por onde começar
 
+- [Preparação jurídica e de privacidade](legal-readiness.md): documentos 2.0,
+  maioridade declarada, contacto e pendências de publicação.
+
 - [README principal](../README.md): objetivo, instalação e comandos.
 - [Arquitetura](architecture.md): responsabilidades dos ficheiros e fluxos.
 - [Contratos](contracts.md): RPCs, Functions, canais e limites atuais.
 - [Desenvolvimento](development.md): execução local e verificações.
 - [Estado e pendências](project-status.md): o que foi registado e o que falta.
+- [Revisão complementar de 08/10](validation/2026-10-08-followup-review.md):
+  prazo de denúncia corrigido localmente e restos do template de baixa prioridade.
 - [Revisão A01–A05](validation/2026-10-05-open-findings.md): evidência original
   e critérios de aceitação, com ligação às correções posteriores.
 - [Correções A01–A05 aceites localmente](validation/2026-10-08-findings-fixes.md):

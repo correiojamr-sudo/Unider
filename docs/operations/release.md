@@ -2,6 +2,14 @@
 
 ## Antes de tocar num serviço
 
+A preparação legal 2.0 e a marca Aquecimento são um candidato não publicado
+nos serviços; a disponibilização em GitHub não equivale a deploy.
+Ver [pendências jurídicas](../legal-readiness.md) antes de publicar. A migration
+`20261010145007_adult_terms_v2.sql` exige nova aceitação/declaração de maioridade
+e recusa o RPC antigo de um argumento e a versão 1.1. Coordenar com frontend
+2.0 após as incrementais anteriores; não publicar uma camada isoladamente.
+Não renomear projetos/URLs/schema como efeito secundário da mudança de marca.
+
 Confirmar projeto, versão, histórico, backup/recuperação e autorização da operação.
 Esta documentação não concede permissão para deploy, SQL, criação de contas,
 alteração de segredos, abertura de registos, compras ou limpeza de dados.
@@ -42,6 +50,17 @@ aplicado. Para migrations novas usar o fluxo atual da skill/CLI e confirmar
 comandos com `--help`.
 
 ## Ordem para uma alteração de contrato
+
+B01: `20261008181527_deterministic_room_end.sql` corrige o fim automático e o
+prazo de denúncia, sem mudar assinaturas RPC, payloads, Functions ou frontend.
+Aplicar pela ordem das migrations, após reconciliar o bootstrap e as alterações
+A01–A05. Para esta correção isolada não é necessário redeploy de Functions/Pages.
+Não foi aplicada remotamente na entrega local. Não reescreve linhas históricas
+nem denúncias: limita também o prazo de salas com `ended_at` antigo tardio.
+Validar depois do lançamento autorizado uma sala expirada sem polling, uma
+denúncia dentro do prazo e a recusa após o prazo; a consulta tardia e o retry não
+podem deslocá-lo. Uma reversão das funções reintroduziria o erro de B01; usar
+migration compensatória revista, não editar o histórico aplicado.
 
 1. Preparar ambiente autorizado de validação, plano de recuperação e, se a
    alteração for incompatível, janela de manutenção acordada.
