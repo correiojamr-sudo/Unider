@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
 
-test('isolated auth browser: OTP recovery, late replies, Terms/Settings and startup races', {
+test('isolated auth browser: password login/signup/recovery, late replies, Terms/Settings and startup races', {
   skip: !process.env.UNIDER_TEST_PLAYWRIGHT ? 'Set UNIDER_TEST_PLAYWRIGHT to an installed module.' : false,
   timeout: 60000,
 }, async t => {
@@ -15,6 +15,7 @@ test('isolated auth browser: OTP recovery, late replies, Terms/Settings and star
     import { createRoot } from 'react-dom/client';
     import App from '/src/App.tsx';
     import Login from '/src/pages/Login.tsx';
+    import RecoverPassword from '/src/pages/RecoverPassword.tsx';
     import TermsModal from '/src/components/modals/TermsModal.tsx';
     import SettingsModal from '/src/components/modals/SettingsModal.tsx';
     import { useAuthStore } from '/src/store/authStore.ts';
@@ -26,7 +27,7 @@ test('isolated auth browser: OTP recovery, late replies, Terms/Settings and star
     function Root() {
       const [view, setView] = useState('login');
       window.fixture.render = setView;
-      return view === 'login' ? <Login /> : view === 'terms' ? <TermsModal onAccept={() => window.fixture.accepted++} />
+      return view === 'login' ? <Login /> : view === 'recovery' ? <RecoverPassword /> : view === 'terms' ? <TermsModal onAccept={() => window.fixture.accepted++} />
         : view === 'settings' ? <SettingsModal onClose={() => window.fixture.closed++} /> : view === 'app' ? <App /> : <p>Desmontado</p>;
     }
     createRoot(document.getElementById('root')).render(<React.StrictMode><Root /></React.StrictMode>);
@@ -47,6 +48,11 @@ test('isolated auth browser: OTP recovery, late replies, Terms/Settings and star
     export const supabase = {
       functions: { invoke: () => Promise.resolve({ data: { server_now: new Date().toISOString() }, error: null }) },
       auth: {
+        signInWithPassword: args => request('login', args, () => ({ data: { session: { user: { id: 'verified' } } }, error: null })),
+        signUp: args => request('register', args, () => ({ data: { user: { id: 'new-unconfirmed' }, session: null }, error: null })),
+        resetPasswordForEmail: (email, options) => request('reset', { email, options }, () => ({ data: {}, error: null })),
+        resend: args => request('resend', args, () => ({ data: {}, error: null })),
+        updateUser: args => request('password', args, () => ({ data: { user: window.stores.auth.getState().user }, error: null })),
         signInWithOtp: args => request('send', args, () => ({ data: { session: null }, error: null })),
         verifyOtp: args => request('verify', args, () => ({ data: { session: { user: { id: 'verified' } } }, error: null })),
         signOut: () => request('logout', {}, () => ({ error: null })),
@@ -96,47 +102,94 @@ test('isolated auth browser: OTP recovery, late replies, Terms/Settings and star
     page.on('pageerror', error => errors.push(error.message));
     const reset = async () => { await page.goto(origin); await page.locator('#email').waitFor(); };
     const mode = (name, value) => page.evaluate(([name, value]) => { window.fixture.modes[name] = value; }, [name, value]);
-    const fillEmail = async email => { await page.locator('#email').fill(email); await page.getByRole('checkbox').check(); };
+    const fillEmail = async email => { await page.locator('#email').fill(email); };
     const finish = (name, failure = false) => page.evaluate(([name, failure]) => {
       const index = window.fixture.pending.findIndex(item => item.name === name);
       if (index >= 0) window.fixture.pending.splice(index, 1)[0].finish(failure);
     }, [name, failure]);
-    await reset(); await fillEmail('  Nome@STUDENT.UC.PT  '); await page.getByRole('button', { name: 'Continuar', exact: true }).click();
-    await page.getByText('Pedido de email confirmado para', { exact: false }).waitFor();
-    assert.equal(await page.evaluate(() => window.fixture.calls[0].args.email), 'nome@student.uc.pt');
-    assert.equal(await page.getByRole('button', { name: /Reenviar em/ }).isDisabled(), true);
-    await page.locator('#otp').fill('12345678'); await mode('verify', 'error');
-    await page.getByRole('button', { name: 'Entrar', exact: true }).click();
-    await page.getByRole('alert').filter({ hasText: 'expirou' }).waitFor();
-    assert.equal(await page.getByRole('button', { name: 'Entrar', exact: true }).isEnabled(), true);
+    const fillLogin = async (email = '  Nome@STUDENT.UC.PT  ') => {
+      await fillEmail(email); await page.locator('#password').fill('fixture-password-123');
+    };
+    const register = async () => {
+      await page.getByRole('button', { name: 'Criar conta', exact: true }).click();
+      await fillLogin('nova@student.uc.pt');
+      await page.locator('#name').fill(' Nome privado ');
+      await page.locator('#birth-date').fill('2000-01-01');
+    };
+    await reset();
+    assert.equal(await page.getByRole('button', { name: 'Entrar', exact: true }).getAttribute('aria-pressed'), 'true');
+    assert.equal(await page.getByRole('checkbox').count(), 0);
+    await fillLogin(); await mode('login', 'error');
+    await page.getByRole('button', { name: 'Iniciar sessão' }).click();
+    await page.getByRole('alert').waitFor();
     assert.ok(!(await page.locator('body').innerText()).includes('SECRET'));
-    await page.clock.install(); await page.clock.fastForward(61000);
-    await mode('send', 'throw'); await page.getByRole('button', { name: 'Reenviar código', exact: true }).click();
-    await page.getByRole('alert').filter({ hasText: 'Não foi possível' }).waitFor();
-    assert.ok((await page.locator('body').innerText()).includes('nome@student.uc.pt'));
-    await page.clock.fastForward(61000); await mode('send', 'success');
-    await page.getByRole('button', { name: 'Reenviar código', exact: true }).click();
-    await page.getByRole('button', { name: /Reenviar em/ }).waitFor();
-    await page.locator('#otp').fill('1234567890'); await mode('verify', 'pending');
-    await page.getByRole('button', { name: 'Entrar', exact: true }).click();
-    await page.getByRole('button', { name: 'Voltar e corrigir email' }).click();
-    await page.locator('#email').fill('outra@student.uc.pt'); await finish('verify');
-    assert.equal(await page.evaluate(() => window.stores.auth.getState().user), null);
-    assert.equal(await page.locator('#email').inputValue(), 'outra@student.uc.pt');
-    await page.clock.resume();
+    assert.equal(await page.locator('#password').getAttribute('type'), 'password');
+    await mode('login', 'success'); await page.getByRole('button', { name: 'Iniciar sessão' }).click();
+    await page.waitForFunction(() => window.stores.auth.getState().user?.id === 'verified');
+    assert.equal(await page.evaluate(() => window.fixture.calls[0].args.email), 'nome@student.uc.pt');
+    assert.equal(await page.evaluate(() => window.fixture.calls.some(call => call.name === 'register')), false);
+    assert.equal(await page.locator('#password').inputValue(), '');
 
-    // Send response after correction must not show an OTP destination or keep loading.
-    await reset(); await fillEmail('alice@student.uc.pt'); await mode('send', 'pending');
-    await page.getByRole('button', { name: 'Continuar', exact: true }).click();
-    await page.locator('#email').fill('bob@student.uc.pt'); await finish('send');
-    assert.equal(await page.locator('#otp').count(), 0);
-    assert.equal(await page.getByRole('button', { name: 'A enviar...' }).count(), 0);
+    await reset(); await fillEmail('nova@student.uc.pt');
+    await page.getByRole('button', { name: 'Reenviar confirmação do email' }).click();
+    await page.getByRole('status').filter({ hasText: 'Pedido de confirmação recebido' }).waitFor();
+    assert.equal(await page.evaluate(() => window.fixture.calls[0].args.type), 'signup');
+    await page.getByRole('button', { name: 'Reenviar confirmação do email' }).click();
+    await page.getByRole('alert').filter({ hasText: 'um minuto' }).waitFor();
+    assert.equal(await page.evaluate(() => window.fixture.calls.length), 1);
 
-    // Rejection at the first step never claims that mail was sent.
-    await reset(); await fillEmail('alice@student.uc.pt'); await mode('send', 'throw');
-    await page.getByRole('button', { name: 'Continuar', exact: true }).click();
-    await page.getByRole('alert').waitFor(); assert.equal(await page.locator('#otp').count(), 0);
-    assert.equal(await page.getByRole('button', { name: 'A enviar...' }).count(), 0);
+    await reset(); await register();
+    assert.equal(await page.locator('#gender').inputValue(), 'undisclosed');
+    assert.equal(await page.getByRole('button', { name: 'Registar conta' }).isDisabled(), true);
+    await page.getByRole('checkbox').check(); await page.locator('#birth-date').fill('2020-01-01');
+    await page.getByRole('button', { name: 'Registar conta' }).click(); await page.getByRole('alert').waitFor();
+    assert.equal(await page.evaluate(() => window.fixture.calls.length), 0);
+    await page.locator('#birth-date').fill('2000-01-01'); await page.locator('#password').fill('short');
+    await page.getByRole('button', { name: 'Registar conta' }).click(); await page.getByRole('alert').waitFor();
+    assert.equal(await page.evaluate(() => window.fixture.calls.length), 0);
+    await page.locator('#password').fill('fixture-password-123');
+    await page.getByRole('button', { name: 'Registar conta' }).click();
+    await page.getByRole('status').filter({ hasText: 'Pedido recebido' }).waitFor();
+    const signup = await page.evaluate(() => window.fixture.calls[0].args);
+    assert.equal(signup.email, 'nova@student.uc.pt');
+    assert.deepEqual(signup.options.data, { registration_name: 'Nome privado', birth_date: '2000-01-01', gender: 'undisclosed', terms_version: '2.0', adult: true });
+    assert.equal(signup.options.emailRedirectTo, origin + '/login');
+    assert.equal(await page.evaluate(() => window.stores.auth.getState().session), null);
+    assert.equal(await page.locator('#password').inputValue(), '');
+
+    // Late login success/failure cannot authenticate after correction or a mode switch.
+    for (const failure of [false, true]) {
+      await reset(); await fillLogin('alice@student.uc.pt'); await mode('login', 'pending');
+      await page.getByRole('button', { name: 'Iniciar sessão' }).click();
+      await page.getByRole('button', { name: 'Criar conta', exact: true }).click(); await finish('login', failure);
+      assert.equal(await page.evaluate(() => window.stores.auth.getState().session), null);
+      assert.equal(await page.getByRole('alert').count(), 0);
+      assert.equal(await page.getByRole('checkbox').isChecked(), false);
+    }
+    await reset(); await register(); await page.getByRole('checkbox').check(); await mode('register', 'pending');
+    await page.getByRole('button', { name: 'Registar conta' }).click();
+    await page.locator('#name').fill('Outro nome'); await finish('register');
+    assert.equal(await page.getByRole('status').count(), 0);
+    assert.equal(await page.locator('#name').inputValue(), 'Outro nome');
+
+    // Recovery is public before authentication; updates require the authenticated session.
+    await reset(); await page.evaluate(() => { window.stores.auth.getState().finishStartup(); window.fixture.render('recovery'); });
+    await page.locator('#recovery-email').fill('nome@student.uc.pt');
+    await page.getByRole('button', { name: 'Enviar email de recuperação' }).click();
+    await page.getByRole('status').filter({ hasText: 'Se existir uma conta' }).waitFor();
+    assert.equal(await page.evaluate(() => window.fixture.calls[0].args.options.redirectTo), origin + '/recuperar-password');
+    await page.getByRole('button', { name: 'Enviar email de recuperação' }).click();
+    await page.getByRole('alert').filter({ hasText: 'um minuto' }).waitFor();
+    assert.equal(await page.evaluate(() => window.fixture.calls.length), 1);
+    await page.evaluate(() => window.fixture.login('recovered')); await page.locator('#new-password').fill('new-fixture-password');
+    await mode('password', 'pending'); await page.getByRole('button', { name: 'Guardar password' }).click();
+    await page.evaluate(() => window.fixture.login('another-user')); await finish('password');
+    assert.equal(await page.getByText('Password alterada.', { exact: false }).count(), 0);
+    // A new identity cannot inherit the previous account's typed password.
+    assert.equal(await page.locator('#new-password').inputValue(), '');
+    await page.locator('#new-password').fill('another-fixture-password'); await mode('password', 'success');
+    await page.getByRole('button', { name: 'Guardar password' }).click();
+    await page.getByRole('status').filter({ hasText: 'Password alterada' }).waitFor();
 
     for (const failure of [false, true]) {
       await reset(); await page.evaluate(() => { window.fixture.login('alice'); window.fixture.render('terms'); window.fixture.modes.accept_terms = 'pending'; });
@@ -195,6 +248,11 @@ test('isolated auth browser: OTP recovery, late replies, Terms/Settings and star
     await page.evaluate(() => window.fixture.events.forEach(cb => cb('SIGNED_IN', { user: { id: 'legal-reader' } })));
     await page.getByRole('heading', { name: 'Termos de Utilização', exact: true }).waitFor();
     assert.equal(await page.evaluate(() => window.fixture.calls.filter(call => ['send', 'verify', 'accept_terms'].includes(call.name)).length), legalCallsBefore);
+    await page.evaluate(() => { history.pushState({}, '', '/recuperar-password'); dispatchEvent(new PopStateEvent('popstate')); });
+    await page.locator('#new-password').waitFor();
+    await page.evaluate(() => window.fixture.events.forEach(cb => cb('SIGNED_OUT', null)));
+    await page.locator('#recovery-email').waitFor();
+    assert.equal(new URL(page.url()).pathname, '/recuperar-password');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     assert.deepEqual(external, []); assert.deepEqual(errors, []);
     t.diagnostic('Actual Login, App, Terms, Settings and stores; local API fixture; no external requests.');

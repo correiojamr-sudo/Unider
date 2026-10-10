@@ -18,7 +18,8 @@ manifesto/service worker que demonstre essa funcionalidade completa.
 | --- | --- |
 | `src/main.tsx` | Valida configuração antes de importar App; monta React ou diagnóstico recuperável. |
 | `src/App.tsx` | Rotas, guardas de sessão e observação do estado Auth. |
-| `src/pages/Login.tsx` | Email institucional, pedido OTP e verificação do código. |
+| `src/pages/Login.tsx` | Login email/password, registo com dados privados/aceitação e reenvio de confirmação. |
+| `src/pages/RecoverPassword.tsx`, `src/lib/registration.ts` | Recuperação autenticada da password e validações de registo. |
 | `src/pages/Lobby.tsx` | Contagem, sugestões, termos, espera e entrada no chat. |
 | `src/pages/Chat.tsx` | Receção privada, envio, retry, extensão, denúncia e saída. |
 | `src/components/modals/` | Termos e definições; não são páginas com rota própria. |
@@ -52,17 +53,19 @@ manifesto/service worker que demonstre essa funcionalidade completa.
 
 ### Login e consentimento
 
-`Login` pede/verifica OTP em Supabase Auth. `App` acompanha a sessão, e
+`Login` usa email/password em Supabase Auth, separando login e registo. `App` acompanha a sessão, e
 `authStore` liga o contexto de chat ao utilizador. `Lobby` lê a versão dos termos
 para esse utilizador e bloqueia entrada enquanto a consulta está pendente ou falha;
-`TermsModal` chama `accept_terms('1.1')`. O servidor exige elegibilidade nas
+`TermsModal` chama `accept_terms('2.0', true)`. O servidor exige elegibilidade nas
 operações sensíveis: sessão visual não substitui autorização.
 
-O email é normalizado com `trim`/minúsculas e validado como endereço completo.
-Só uma resposta Auth sem erro fixa o destinatário e permite introduzir OTP;
-isso confirma o pedido, não a entrega de email. O formulário aceita 6–10 dígitos,
-mostra o destinatário, permite corrigir o email e oferece reenvio explícito após
-60 segundos. O servidor continua a impor validade, limites e disponibilidade.
+O email é normalizado com `trim`/minúsculas e validado como endereço completo;
+a password não é normalizada. O trigger valida novos registos e guarda nome,
+nascimento e género privados em `account_details`, com leitura só do próprio.
+Os dados iniciais também ficam nos metadados Auth; estes nunca decidem acesso.
+O servidor exige confirmação de email, consentimento atual e ausência de ban.
+Recuperação por ligação Auth permite definir uma password nas contas antigas;
+ver detalhes e pré-requisitos em [contratos](contracts.md).
 
 `App` subscreve Auth antes da leitura inicial. Eventos ou uma revisão de sessão
 mais recente vencem resultados/erros antigos de `getSession`; falha inicial

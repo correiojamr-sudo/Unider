@@ -23,7 +23,7 @@ Não alterar o outro projeto Supabase. Não expor credenciais nas evidências.
 | Functions | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Ambiente servidor fornecido pela plataforma; nunca frontend. |
 | Buffer Redis | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Segredos das Functions; token com permissões necessárias, não read-only. |
 | Realtime | Canais de sala privados, leitura autorizada, sem escrita cliente | Configuração alojada e políticas em migrations. |
-| Auth/email | SMTP autorizado e configuração OTP | Painel/Auth; segredos SMTP não pertencem ao Git. |
+| Auth/email | SMTP autorizado, email/password, confirmação, redirects e política de password | Painel/Auth; segredos SMTP não pertencem ao Git. |
 | Retenção | `purge_old_reports`, Cron | Schema e observação de `cron.job_run_details`. |
 
 O frontend continua em Cloudflare Pages: comando do projeto `npm run build`,
@@ -32,6 +32,32 @@ num Worker. O build usa as variáveis Vite; alterá-las exige novo build para
 alterar o destino do frontend servido.
 
 ## Cuidado particular com a instalação pré-abertura
+
+### Candidato de login/password e registo privado — 10/10/2026
+
+Após as incrementais anteriores, aplicar `20261010170027_private_registration_details.sql`
+e publicar o frontend correspondente apenas com autorização. O novo trigger
+recusa registos antigos sem nome/nascimento/género/aceitação: não misturar com
+cliente OTP antigo para criar contas. Contas já existentes continuam sem esses
+dados e podem definir password por recuperação; não apagar/recriar para migrar.
+
+Manter confirmação de email ativa. Configurar/validar política alojada de password
+compatível (mínimo 12, máximo cliente 128), limites de pedidos, SMTP, Site URL e
+redirects exatos da origem publicada: `/login` e `/recuperar-password`. Templates
+de confirmação e recuperação devem incluir `ConfirmationURL`; templates antigos
+só com código não completam este novo fluxo por ligação. Não usar redirects
+wildcard de produção. Reenviar confirmação usa `resend`, não novo signup.
+Projetos Free novos com SMTP padrão têm restrições de personalização de templates
+desde 03/06/2026; configurar SMTP personalizado quando necessário, sem presumir
+que editar um template estará disponível no plano atual.
+
+Testar conta nova com email autorizado, rejeição de nascimento <18 por API,
+confirmar email e entrar com password; erro de password e login de conta inexistente
+sem signup; recuperação, link expirado/usado, reenvio e limites; conta antiga OTP;
+refresh e troca de separador/conta durante pedidos. Verificar RLS dos dados
+privados, ausência desses campos nas mensagens e eliminação em cascata. O SDK
+trata a ligação de recuperação e a sessão; mocks não provam templates/SMTP/Auth.
+Nada disto foi alterado remotamente nesta implementação local.
 
 Em 2026-10-03 foi registado no projeto `ymzcsoyylrpkdflnlvkg` um bootstrap
 consolidado:

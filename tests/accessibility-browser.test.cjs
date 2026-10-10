@@ -154,6 +154,7 @@ test('browser keyboard: modal isolation, required consent, restoration and compa
     await terms.waitFor({ state: 'detached' });
     await page.evaluate(() => window.fixture.render('login'));
     await page.getByRole('textbox', { name: 'Email Institucional' }).waitFor();
+    await page.getByRole('button', { name: 'Criar conta', exact: true }).click();
     await page.getByRole('checkbox', { name: /buffer temporário/ }).waitFor(); await noOverflow();
     assert.ok(!(await page.locator('body').innerText()).includes('registo integral'));
     await page.evaluate(() => window.fixture.render('lobby')); await trigger.click();
