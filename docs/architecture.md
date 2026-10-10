@@ -2,7 +2,7 @@
 
 ## O que é a aplicação
 
-O Unider é uma SPA para conversas efémeras entre estudantes com email
+O Aquecimento (anteriormente Unider) é uma SPA para conversas temporárias entre maiores de 18 anos com email
 `@student.uc.pt`. React/TypeScript desenha a interface; Supabase fornece Auth,
 PostgreSQL, RPCs, Realtime e Edge Functions; Upstash Redis conserva o buffer
 temporário. Cloudflare Pages serve o frontend compilado em `dist/`.
@@ -218,7 +218,7 @@ O conteúdo comprido tem scroll; o cabeçalho das Definições permanece visíve
 
 Botões com ícones e campos têm nomes acessíveis; erros dos modais são alertas.
 Os relógios não são regiões de anúncios automáticos. O documento identifica
-`pt-PT`, título Unider e um favicon SVG próprio. Login, termos e eliminação
+`pt-PT`, título Aquecimento e um favicon SVG próprio. Login, termos e eliminação
 explicam o buffer parcial e a limpeza periódica, sem prometer registo integral
 ou apagar todos os vestígios ao fim de exatamente 30 dias. Ver
 [validação U05](validation/2026-10-05-interface-fixes.md).

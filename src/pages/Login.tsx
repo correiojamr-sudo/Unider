@@ -32,7 +32,7 @@ export default function Login() {
       return;
     }
     if (!legalAccepted) {
-      setValidationError('Tens de aceitar os termos de confidencialidade.');
+      setValidationError('Confirma que tens 18 ou mais anos e aceita os Termos de Utilização.');
       return;
     }
     if (loading || Date.now() < resendAt) return;
@@ -68,8 +68,8 @@ export default function Login() {
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-8">
       <div className="text-center space-y-2">
-        <h1 className="text-4xl font-bold text-white tracking-tighter">UNIDER</h1>
-        <p className="text-slate-400 text-sm">Conversas efémeras. Exclusivo UC.</p>
+        <h1 className="text-4xl font-bold text-white tracking-tighter">Aquecimento</h1>
+        <p className="text-slate-400 text-sm">Conversas temporárias. Para maiores de 18 anos com email @student.uc.pt.</p>
       </div>
 
       <div className="w-full max-w-sm space-y-6">
@@ -106,9 +106,13 @@ export default function Login() {
                 />
               </div>
               <div className="text-xs text-slate-400 leading-relaxed">
-                As conversas usam um buffer temporário que expira 5 minutos após a última mensagem nova. Uma denúncia guarda o conteúdo então disponível, sem garantir a conversa completa, para auditoria interna e eventual encaminhamento às autoridades judiciais e policiais (PJ / MP) mediante ordem legal. Tentar novamente ou cancelar não recupera mensagens expiradas. A limpeza periódica remove denúncias com mais de 30 dias.
+                Declaro que tenho 18 ou mais anos e aceito os Termos de Utilização. Li a informação de privacidade. As conversas usam um buffer temporário; uma denúncia pode guardar o conteúdo disponível.
               </div>
             </label>
+            <div className="flex gap-4 text-xs">
+              <a href="/termos" target="_blank" rel="noopener noreferrer" className="underline">Ler termos (novo separador)</a>
+              <a href="/privacidade" target="_blank" rel="noopener noreferrer" className="underline">Ler privacidade (novo separador)</a>
+            </div>
 
             <button
               type="submit"
@@ -165,7 +169,7 @@ export default function Login() {
 
       <footer className="w-full max-w-sm mt-auto pt-8 pb-4 text-center">
         <p className="text-[10px] text-slate-400 leading-tight">
-          O UNIDER é um projeto independente desenvolvido por estudantes e não possui qualquer afiliação, vínculo institucional, endosso ou suporte oficial por parte da Universidade de Coimbra.
+          O Aquecimento é independente e não tem afiliação, vínculo institucional, aprovação, endosso ou suporte oficial da Universidade de Coimbra.
         </p>
       </footer>
     </div>

@@ -90,7 +90,7 @@ test('isolated chat browser recovery and stale-response regressions', {
       from(table) {
         const query = { select() { return query; }, eq() { return query; },
           abortSignal() { return query; },
-          single() { const reply = Promise.resolve({ data: { terms_version: '1.1' }, error: null }); reply.abortSignal = () => reply; return reply; },
+          single() { const reply = Promise.resolve({ data: { terms_version: '2.0' }, error: null }); reply.abortSignal = () => reply; return reply; },
           limit() { return Promise.resolve({ data: [], error: null }); } };
         if (!['profiles', 'icebreaker_suggestions'].includes(table)) throw new Error('Unexpected table');
         return query;

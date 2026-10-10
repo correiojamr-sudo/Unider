@@ -147,9 +147,21 @@ test('PostgreSQL roles, consent, room lifecycle and account deletion', async t =
     await t.test('consent persists only the current version; bans prevent consent and matching', async () => {
       await denied(() => rpc(a, 'find_or_join_match'));
       await denied(() => rpc(a, 'accept_terms', ['1.0']));
-      for (const user of [a, b, c]) assert.equal(await rpc(user, 'accept_terms', ['1.1']), true);
+      await denied(() => rpc(a, 'accept_terms', ['1.1', true]));
+      await denied(() => rpc(a, 'accept_terms', ['2.0']));
+      await denied(() => rpc(a, 'accept_terms', ['2.0', false]));
+      await denied(() => rpc(a, 'accept_terms', ['2.0', null]));
+      await denied(() => as(null, "SELECT public.accept_terms('2.0',true)", [], 'anon'));
+      await denied(() => as(a, 'UPDATE public.profiles SET adult_declared_at=now() WHERE id=$1', [a]));
+      for (const user of [a, b, c]) assert.equal(await rpc(user, 'accept_terms', ['2.0', true]), true);
+      const declaration = (await as(a, 'SELECT terms_version,terms_accepted_at,adult_declared_at FROM public.profiles WHERE id=$1', [a]))[0];
+      assert.equal(declaration.terms_version, '2.0');
+      assert.ok(declaration.terms_accepted_at && declaration.adult_declared_at);
+      await db.query('UPDATE public.profiles SET adult_declared_at=NULL WHERE id=$1', [a]);
+      await denied(() => rpc(a, 'find_or_join_match'));
+      await rpc(a, 'accept_terms', ['2.0', true]);
       await db.query('UPDATE public.profiles SET is_banned=true WHERE id=$1', [c]);
-      await denied(() => rpc(c, 'accept_terms', ['1.1']));
+      await denied(() => rpc(c, 'accept_terms', ['2.0', true]));
       await denied(() => rpc(c, 'find_or_join_match'));
       await db.query('UPDATE public.profiles SET is_banned=false WHERE id=$1', [c]);
     });
@@ -175,6 +187,63 @@ test('PostgreSQL roles, consent, room lifecycle and account deletion', async t =
       assert.equal(allow, true);
       assert.equal(await rpc(c, 'can_receive_room_broadcast', ['room:' + room.room_id]), false);
       await denied(() => as(a, "WITH topic AS (SELECT set_config('realtime.topic',$1,true)) INSERT INTO realtime.messages(extension) SELECT 'broadcast' FROM topic", ['room:' + room.room_id]));
+    });
+
+    await t.test('B01 automatic end and report deadline do not depend on polling or a late return', async () => {
+      const cases = [
+        { name: 'initial decision', expiry: '21:32:00', heartbeat: '21:32:00', end: '21:32:30' },
+        { name: 'extended room', expiry: '21:35:00', heartbeat: '21:35:00', end: '21:35:00', extended: true },
+        { name: 'heartbeat', expiry: '21:32:00', heartbeat: '21:30:00', end: '21:30:45' },
+        { name: 'hard close', expiry: '21:50:00', heartbeat: '21:49:50', end: '21:50:00' },
+        { name: 'explicit leave', expiry: '21:32:00', heartbeat: '21:30:00', end: '21:30:20', explicit: true },
+      ];
+      const iso = time => `2026-10-02T${time}Z`;
+      try {
+        for (const scenario of cases) {
+          const ids = [randomUUID(), randomUUID()];
+          const end = Date.parse(iso(scenario.end));
+          for (const id of ids) {
+            await db.query(`INSERT INTO public.active_rooms(id,user_a,user_b,expires_at,hard_close_at,
+              heartbeat_a,heartbeat_b,extended_once) VALUES($1,$2,$3,$4,$5,$6,$6,$7)`,
+            [id, a, b, iso(scenario.expiry), iso('21:50:00'), iso(scenario.heartbeat), !!scenario.extended]);
+          }
+          if (scenario.explicit) {
+            await at(iso(scenario.end));
+            for (const id of ids) await rpc(a, 'leave_room', [id]);
+          }
+          await at(new Date(end + 1).toISOString());
+          const early = await rpc(a, 'get_room_state', [ids[0]]);
+          await at(new Date(end + 12 * 60000).toISOString());
+          // An expired report rolls back refresh_room's write. Repeating it must
+          // still use the effective deadline, even while ended_at remains NULL.
+          for (let retry = 0; retry < 2; retry++) {
+            await assert.rejects(() => as(a, 'SELECT public.authorize_room($1,$2,$3)',
+              [ids[1], a, 'report'], 'service_role'), error => error.code === '42501');
+          }
+          const late = await rpc(a, 'get_room_state', [ids[1]]);
+          assert.equal(Date.parse(early.ended_at), end, scenario.name + ' early end');
+          assert.equal(Date.parse(late.ended_at), end, scenario.name + ' late end');
+          for (const delta of [299999, 300000, 300001]) {
+            await at(new Date(end + delta).toISOString());
+            for (const id of ids) {
+              const action = () => as(a, 'SELECT public.authorize_room($1,$2,$3)', [id, a, 'report'], 'service_role');
+              if (delta <= 300000) await action();
+              else await assert.rejects(action, error => error.code === '42501');
+            }
+          }
+          await db.query('DELETE FROM public.active_rooms WHERE id = ANY($1::uuid[])', [ids]);
+        }
+        // Also bound rows closed by the old helper without rewriting stored history.
+        const id = randomUUID();
+        await db.query(`INSERT INTO public.active_rooms(id,user_a,user_b,expires_at,hard_close_at,
+          heartbeat_a,heartbeat_b,ended_at,end_reason) VALUES($1,$2,$3,
+          '2026-10-02T21:32:00Z','2026-10-02T21:50:00Z',
+          '2026-10-02T21:32:00Z','2026-10-02T21:32:00Z','2026-10-02T21:44:00Z','timeout')`, [id,a,b]);
+        await at('2026-10-02T21:44:00Z');
+        await assert.rejects(() => as(a, 'SELECT public.authorize_room($1,$2,$3)',
+          [id,a,'report'], 'service_role'), error => error.code === '42501');
+        await db.query('DELETE FROM public.active_rooms WHERE id=$1', [id]);
+      } finally { await at(initialTime); }
     });
 
     await t.test('decision phase, both extension votes, refresh and ban enforcement', async () => {
@@ -269,7 +338,7 @@ test('PostgreSQL roles, consent, room lifecycle and account deletion', async t =
     await t.test('deletion succeeds with retained reports, deleted JWT loses authority', async () => {
       await rpc(a, 'delete_own_user_account');
       assert.equal((await db.query("SELECT reported_id FROM public.reported_chats WHERE room_id='fake'")).rows[0].reported_id, null);
-      await denied(() => rpc(a, 'accept_terms', ['1.1']));
+      await denied(() => rpc(a, 'accept_terms', ['2.0', true]));
       await denied(() => rpc(a, 'find_or_join_match'));
       assert.equal((await db.query('SELECT count(*)::int AS n FROM auth.users WHERE id=$1', [a])).rows[0].n, 0);
     });
@@ -292,7 +361,7 @@ test('PostgreSQL roles, consent, room lifecycle and account deletion', async t =
       assert.deepEqual((await db.query('SELECT transcript FROM public.reported_chats WHERE id=$1', [saved[0].id])).rows[0].transcript, evidence);
       // Restore a disposable fixture for the independent concurrency scenario.
       await db.query('INSERT INTO auth.users(id,email) VALUES($1,$2)', [c, 'c@student.uc.pt']);
-      await rpc(c, 'accept_terms', ['1.1']);
+      await rpc(c, 'accept_terms', ['2.0', true]);
     });
 
     await t.test('actual concurrent PostgreSQL transactions preserve one open room per user',

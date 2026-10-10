@@ -140,10 +140,13 @@ test('isolated auth browser: OTP recovery, late replies, Terms/Settings and star
 
     for (const failure of [false, true]) {
       await reset(); await page.evaluate(() => { window.fixture.login('alice'); window.fixture.render('terms'); window.fixture.modes.accept_terms = 'pending'; });
+      await page.getByRole('checkbox').check();
       await page.getByRole('button', { name: 'Aceitar e Continuar' }).click();
       await page.evaluate(() => window.fixture.login('carol')); await finish('accept_terms', failure);
       assert.equal(await page.evaluate(() => window.fixture.accepted), 0);
       await page.getByRole('button', { name: 'Aceitar e Continuar' }).waitFor();
+      assert.equal(await page.getByRole('button', { name: 'Aceitar e Continuar' }).isDisabled(), true);
+      await page.getByRole('checkbox').check();
       await mode('accept_terms', 'throw'); await page.getByRole('button', { name: 'Aceitar e Continuar' }).click();
       await page.getByText('Não foi possível guardar o consentimento. Tenta novamente.').waitFor();
       assert.equal(await page.getByRole('button', { name: 'Aceitar e Continuar' }).isEnabled(), true);
@@ -179,6 +182,20 @@ test('isolated auth browser: OTP recovery, late replies, Terms/Settings and star
     await page.getByText('A sessão inicial não foi confirmada.', { exact: false }).waitFor();
     await page.locator('#email').waitFor();
     assert.equal(await page.evaluate(() => window.stores.auth.getState().isLoading), false);
+    // Public legal pages remain readable before login, without OTP/acceptance.
+    const legalCallsBefore = await page.evaluate(() => window.fixture.calls.filter(call => ['send', 'verify', 'accept_terms'].includes(call.name)).length);
+    await page.evaluate(() => { history.pushState({}, '', '/privacidade'); dispatchEvent(new PopStateEvent('popstate')); });
+    await page.getByRole('heading', { name: 'Política de Privacidade', exact: true }).waitFor();
+    assert.ok((await page.locator('main').innerText()).includes('João António Pires Martins dos Santos Rodrigues'));
+    assert.ok((await page.locator('main').innerText()).includes('aquecimentoapp@gmail.com'));
+    assert.equal(await page.getByRole('button', { name: 'Aceitar e Continuar' }).count(), 0);
+    await page.evaluate(() => { history.pushState({}, '', '/termos'); dispatchEvent(new PopStateEvent('popstate')); });
+    await page.getByRole('heading', { name: 'Termos de Utilização', exact: true }).waitFor();
+    assert.ok((await page.locator('main').innerText()).includes('18 ou mais anos'));
+    await page.evaluate(() => window.fixture.events.forEach(cb => cb('SIGNED_IN', { user: { id: 'legal-reader' } })));
+    await page.getByRole('heading', { name: 'Termos de Utilização', exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => window.fixture.calls.filter(call => ['send', 'verify', 'accept_terms'].includes(call.name)).length), legalCallsBefore);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     assert.deepEqual(external, []); assert.deepEqual(errors, []);
     t.diagnostic('Actual Login, App, Terms, Settings and stores; local API fixture; no external requests.');
   } finally { if (browser) await browser.close(); await server.close(); }

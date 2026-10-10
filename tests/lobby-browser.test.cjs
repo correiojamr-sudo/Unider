@@ -70,7 +70,7 @@ test('isolated browser: refresh, cancellation, terms, cutoffs and suggestion ret
           abortSignal(signal) { (window.fixture.signals ||= []).push({ kind: 'terms', signal }); return query; },
           single() {
             window.fixture.calls.push('terms');
-            const reply = () => ({ data: { terms_version: window.fixture.terms === 'accepted' ? '1.1' : null }, error: null });
+            const reply = () => ({ data: { terms_version: window.fixture.terms === 'accepted' ? '2.0' : null }, error: null });
             if (window.fixture.terms === 'pending') return abortable(new Promise((resolve, reject) => window.fixture.pending.push(failure => failure ? reject(new Error('fixture offline')) : resolve(reply()))), 'terms');
             if (window.fixture.terms === 'error') return abortable(Promise.reject(new Error('fixture offline')), 'terms');
             return abortable(Promise.resolve(reply()), 'terms');
@@ -232,6 +232,7 @@ test('isolated browser: refresh, cancellation, terms, cutoffs and suggestion ret
     await page.evaluate(() => { window.fixture.terms = 'required'; window.fixture.pending.splice(0).forEach(resolve => resolve()); });
     await page.getByText('Termos de Utilização', { exact: true }).waitFor();
     await page.evaluate(() => { window.fixture.accept = false; });
+    await page.getByRole('checkbox').check();
     await page.getByRole('button', { name: 'Aceitar e Continuar' }).click();
     await page.getByText('Não foi possível guardar o consentimento. Tenta novamente.', { exact: true }).waitFor();
     assert.equal(new URL(page.url()).pathname, '/lobby');

@@ -5,6 +5,7 @@ import { supabase } from './lib/supabase';
 import Login from './pages/Login';
 import Lobby from './pages/Lobby';
 import Chat from './pages/Chat';
+import Legal from './pages/Legal';
 import { useTimeSync } from './hooks/useTimeSync';
 import { AUTH_STORAGE_CHANNEL, observeAuthSession } from './lib/authSession';
 
@@ -42,6 +43,8 @@ const AppRoutes = () => {
 
   return (
     <Routes>
+      <Route path="/termos" element={<Legal />} />
+      <Route path="/privacidade" element={<Legal privacy />} />
       <Route path="/login" element={<AuthRoute><Login /></AuthRoute>} />
       <Route path="/lobby" element={<ProtectedRoute><Lobby /></ProtectedRoute>} />
       <Route path="/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
@@ -94,6 +97,10 @@ function App() {
            </div>}
            {isSigningOut && <p role="status" className="p-3 text-sm">A confirmar saída...</p>}
            <AppRoutes />
+           <nav aria-label="Informação legal" className="flex justify-center gap-4 p-4 text-xs text-slate-400">
+             <a href="/termos" className="underline">Termos</a>
+             <a href="/privacidade" className="underline">Privacidade</a>
+           </nav>
         </div>
       </div>
     </BrowserRouter>

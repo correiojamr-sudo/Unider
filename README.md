@@ -1,6 +1,8 @@
-# Unider
+# Aquecimento
 
-Conversas efémeras entre estudantes com email `@student.uc.pt`, numa janela
+Projeto independente, sem afiliação à Universidade de Coimbra, anteriormente
+chamado Unider. Conversas temporárias para maiores de 18 anos com email
+`@student.uc.pt`, numa janela
 diária em Lisboa. Frontend React/TypeScript com Vite e Tailwind, servido por
 **Cloudflare Pages**; Supabase para Auth, PostgreSQL, Realtime e Edge Functions;
 Upstash Redis para buffer temporário e deduplicação.
@@ -11,6 +13,8 @@ As correções do PR #6 foram integradas para testes pré-abertura. A validaçã
 ponta a ponta e a configuração de email permanecem pendentes no último registo.
 Não tratar código compilado ou CI verde como autorização para abrir a plataforma.
 Ver [estado e prioridades](docs/project-status.md).
+Documentos legais e aceitação 2.0 preparados localmente; ver
+[preparação jurídica](docs/legal-readiness.md) antes de publicar ou abrir acesso.
 
 ## Começar a desenvolver
 
