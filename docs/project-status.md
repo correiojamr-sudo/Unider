@@ -1,5 +1,59 @@
 # Estado e trabalho pendente
 
+## Publicação GitHub de login/registo — 10/10/2026
+
+[Certain] Proprietário autorizou commit/push e novo PR para login/password,
+registo privado e recuperação. PR #9 confirmado integrado em `main` no commit
+`724d420fb3178983225c48a90f16e80d7e205e9b`; a branch existente mantém a base
+`65f2f19`, sem trocar branch ou fazer merge/rebase. Novo candidato será publicado
+em rascunho, com `[CF-Pages-Skip]`, sem merge, deploy, SQL alojado, configuração
+Auth/SMTP ou emails reais. Os registos de «sem commit/push» abaixo descrevem
+a entrega local anterior, não esta autorização de publicação. Consultar o novo
+PR para o commit publicado e o CI; os testes locais não provam serviços alojados.
+
+## Email/password e registo privado — 10/10/2026, candidato local
+
+[Certain] Pedido do proprietário implementado sobre `65f2f19`, preservando as
+seis alterações locais da separação login/registo abaixo. Login agora usa
+email/password; registo pede nome de uso, nascimento, género com opção de não
+divulgar, e aceitação. Recuperação e reenvio de confirmação preparados.
+Nova migration valida idade/aceitação no servidor e guarda dados privados;
+email confirmado é obrigatório para participação. Contas antigas não recebem
+datas inventadas e podem definir password por recuperação.
+
+Gates locais: 107 testes aprovados, zero falhas, dois excluídos em PGlite;
+PostgreSQL 18.6 descartável: 20 aprovados, zero falhas/exclusões, incluindo
+concorrência. Lint sem avisos, build sintético não publicável e links passaram.
+Ver [entrega, ficheiros e limites](validation/2026-10-10-password-registration.md).
+Sem commit/push/deploy, SQL alojado, configuração Auth/SMTP ou emails reais.
+Necessidade/fundamento de nome, data completa e género requer avaliação antes
+de publicar; não anunciar conformidade. Usadas as skills Supabase para contrato,
+segurança e migration, e codex-coordinator para delimitação exclusiva local.
+
+O registo de OTP abaixo é histórico desta sessão e foi substituído por este
+pedido; não descreve o candidato atual. PR #9 continua na versão publicada
+anterior, não inclui estas alterações locais.
+
+## Login separado do registo — 10/10/2026, correção local
+
+[Certain] Sobre `65f2f19`, o ecrã inicial passa a abrir em «Entrar» e oferece
+«Criar conta» separadamente. Login OTP usa `shouldCreateUser: false`, sem fallback
+para registo nem checkbox de criação. Registo exige maioridade/termos e usa
+`true`; reenvio mantém o modo. Trocar modo limpa código/destinatário/checkbox,
+invalida respostas anteriores e conserva o cooldown. A nova aceitação obrigatória
+continua no lobby/servidor. Nada alterado em inscrições, SMTP ou serviços alojados.
+
+Ficheiros: Login, testes Auth/acessibilidade e guias de contratos/privacidade/estado.
+Verificação final: **104 testes passaram, zero falhas, dois excluídos**
+(concorrência PGlite), com cinco fixtures Chrome e pedidos externos bloqueados.
+Cobertura nova: login por defeito sem criação, registo dependente de termos,
+reenvio em ambos os modos, troca com sucesso/erro tardio e cooldown preservado.
+Lint, build sintético não publicável, links legais/documentais e diff check
+passaram. Um teste dirigido falhou inicialmente por reinstalar o relógio da
+fixture; corrigido o teste, o gate final completo passou. Nenhuma migration ou
+Function alterada. Sem commit/push/deploy desta correção;
+não confundir com o candidato anterior publicado no PR #9.
+
 ## Candidato para revisão no GitHub — 10/10/2026
 
 [Certain] O proprietário autorizou commit, push e PR das alterações locais

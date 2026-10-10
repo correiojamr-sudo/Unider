@@ -12,17 +12,50 @@ A versão legal preparada é 2.0; a migration incremental
 além de conta não banida. O RPC antigo de um argumento deixa de estar concedido
 ao cliente. A declaração não comprova idade. Termos/privacidade são rotas públicas.
 
-O login envia o endereço institucional completo após `trim` e conversão para
-minúsculas. A verificação usa `verifyOtp({ email, token, type: 'email' })` com
-o destinatário do pedido confirmado, não um campo entretanto alterado. Aceita
-6–10 dígitos, intervalo permitido pela configuração documentada de Supabase;
-o tamanho/template reais deste ambiente não foram verificados em U03.
+O ecrã inicial separa «Entrar» (por defeito) de «Criar conta». Login chama
+`signInWithPassword({email,password})`, nunca cria conta nem faz fallback para
+registo. O email é normalizado com trim/minúsculas; a password nunca é alterada,
+guardada em perfil, logs ou armazenamento próprio. Uma sessão Auth válida continua
+a evitar repetir login. Guardas/armazenamento scoped são preservados.
 
-O reenvio chama `signInWithOtp` apenas por ação explícita, com intervalo local
-de 60 segundos também após erro. Esta espera não altera os limites do servidor.
-Resposta sem erro confirma o pedido de email, não a entrega. Erros públicos
-PT-PT usam códigos/status conhecidos e nunca mostram o texto interno do serviço.
-Ver [validação U03](validation/2026-10-05-auth-fixes.md).
+Registo chama `signUp` com email/password e metadados iniciais: nome de uso,
+data de nascimento ISO, género male/female/undisclosed, versão 2.0 e declaração
+explícita. UI exige password 12–128 caracteres e aceitação; os limites reais da
+password também devem ser configurados em Auth, não são impostos por SQL.
+Links públicos permitem leitura; checkbox não prova leitura efetiva.
+
+A migration incremental `20261010170027_private_registration_details.sql`
+valida os novos registos no trigger: domínio, nome, data real, idade >=18 pela
+data Lisboa, enum género, versão e declaração. Grava os dados em
+`account_details` (SELECT só do próprio, sem escrita cliente), ligado ao perfil
+com DELETE CASCADE; regista aceitação no perfil protegido. Os metadados iniciais
+também existem em Auth e podem constar da sessão/JWT do próprio. Alterar esses
+metadados posteriormente não altera dados privados/consentimento/ban, nem concede
+acesso. Nunca decidir autorização por user_metadata/JWT editável.
+Os dados não são incluídos nos contratos do chat ou no emparelhamento.
+
+Contas antigas não recebem nome, nascimento ou género inventados; continuam a
+precisar dos termos atuais e declaração. Quem só usava OTP pode definir uma
+password pela recuperação. `eligible` exige também email confirmado no servidor
+e endereço institucional atual. Não desativar confirmação de email para facilitar
+o fluxo. Autenticação não prova idade real.
+
+Registo sem sessão mostra aviso condicional de confirmação, não afirma criação
+nem revela se o endereço já existia. `emailRedirectTo` aponta para /login.
+Reenvio explícito usa `resend({type:'signup',email})`, sem criar conta, com
+60 segundos de espera local incluindo erros. Limites alojados continuam
+autoritativos. Recuperação /recuperar-password não usa AuthRoute:
+antes da sessão chama `resetPasswordForEmail` com resposta não enumeradora e
+redirect para a mesma rota; depois da ligação validada por Auth, `updateUser`
+altera a password da sessão. Mudança de identidade remonta o formulário,
+apagando password/avisos; operações antigas não confirmam sucesso. Password
+alterada não afirma revogação de todas as outras sessões.
+
+Site URL, redirects exatos, templates ConfirmationURL de signup/recovery,
+SMTP, política de password e limites têm de ser validados no ambiente autorizado.
+Nada desta mudança local configura serviços, abre inscrições ou envia emails.
+Documentação oficial: [passwords](https://supabase.com/docs/guides/auth/passwords),
+[signUp](https://supabase.com/docs/reference/javascript/auth-signup).
 
 Auth e RPCs de login/termos/definições/saída usam timeout de 10 segundos.
 Cancelamento ou timeout não desfaz uma ação já recebida pelo servidor; o cliente

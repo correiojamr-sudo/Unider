@@ -1,177 +1,117 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { useAuthOperation } from '../hooks/useAuthOperation';
-import { normalizeInstitutionalEmail, validEmailOtp, OTP_COOLDOWN_MS } from '../lib/authOperations';
+import { normalizeInstitutionalEmail, OTP_COOLDOWN_MS } from '../lib/authOperations';
 import { withScopedAuth } from '../lib/authSession';
-import { LogIn, ShieldAlert } from 'lucide-react';
+import { validAdultBirthDate, validNewPassword, validRegistrationName, GENDERS, type Gender } from '../lib/registration';
+import { TERMS_VERSION } from '../lib/legal';
+
+const fieldClass = 'w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500';
 
 export default function Login() {
+  const [mode, setMode] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
   const [email, setEmail] = useState('');
-  const [otp, setOtp] = useState('');
-  const [step, setStep] = useState<'EMAIL' | 'OTP'>('EMAIL');
-  const operation = useAuthOperation();
-  const { loading } = operation;
-  const [validationError, setValidationError] = useState('');
-  const error = validationError || operation.error;
-  const [destination, setDestination] = useState('');
-  const [resendAt, setResendAt] = useState(0);
-  const [now, setNow] = useState(() => Date.now());
-  const cooldown = Math.max(0, Math.min(60, Math.ceil((resendAt - now) / 1000)));
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [birthDate, setBirthDate] = useState('');
+  const [gender, setGender] = useState<Gender>('undisclosed');
   const [legalAccepted, setLegalAccepted] = useState(false);
-  useEffect(() => {
-    if (!resendAt) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [resendAt]);
-
-  const sendOtp = async (resend = false) => {
-    setValidationError('');
-    const address = normalizeInstitutionalEmail(resend ? destination : email);
-    if (!address) {
-      setValidationError('Indica um endereço completo do domínio @student.uc.pt.');
-      return;
-    }
-    if (!legalAccepted) {
-      setValidationError('Confirma que tens 18 ou mais anos e aceita os Termos de Utilização.');
-      return;
-    }
-    if (loading || Date.now() < resendAt) return;
-    setNow(Date.now());
-    setResendAt(Date.now() + OTP_COOLDOWN_MS);
+  const [validationError, setValidationError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [resendAt, setResendAt] = useState(0);
+  const operation = useAuthOperation();
+  const clear = () => { operation.clear(); setValidationError(''); setNotice(''); };
+  const resendConfirmation = async () => {
+    setValidationError(''); setNotice('');
+    const address = normalizeInstitutionalEmail(email);
+    if (!address) { setValidationError('Indica o teu email institucional completo.'); return; }
+    if (Date.now() < resendAt + OTP_COOLDOWN_MS) { setValidationError('Aguarda um minuto antes de repetir o pedido.'); return; }
+    setResendAt(Date.now());
     await operation.run('send', (current, signal) => withScopedAuth(current, signal, async auth => {
-      const result = await auth.signInWithOtp({ email: address, options: { shouldCreateUser: true } });
+      const result = await auth.resend({ type: 'signup', email: address, options: { emailRedirectTo: `${window.location.origin}/login` } });
       if (result.error) throw result.error;
-      return result;
-    }), () => {
-      setDestination(address);
-      setEmail(address);
-      setOtp('');
-      setStep('OTP');
+      return true;
+    }), () => setNotice('Pedido de confirmação recebido. Se for aplicável à conta, receberás um email. Consulta também o spam.'));
+  };
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault(); setValidationError(''); setNotice('');
+    const address = normalizeInstitutionalEmail(email);
+    if (!address) { setValidationError('Indica um endereço completo do domínio @student.uc.pt.'); return; }
+    if (!password) { setValidationError('Introduz a tua password.'); return; }
+    if (mode === 'REGISTER') {
+      if (!validNewPassword(password)) { setValidationError('A password deve ter entre 12 e 128 caracteres.'); return; }
+      if (!validRegistrationName(name)) { setValidationError('Indica um nome entre 1 e 80 caracteres.'); return; }
+      if (!validAdultBirthDate(birthDate)) { setValidationError('Indica uma data de nascimento válida. O acesso é apenas para maiores de 18 anos.'); return; }
+      if (!GENDERS.includes(gender) || !legalAccepted) { setValidationError('Lê os termos e a informação de privacidade e confirma a aceitação e a maioridade.'); return; }
+    }
+    await operation.run(mode === 'LOGIN' ? 'login' : 'register', (current, signal) => withScopedAuth(current, signal, async auth => {
+      const result = mode === 'LOGIN'
+        ? await auth.signInWithPassword({ email: address, password })
+        : await auth.signUp({ email: address, password, options: {
+          emailRedirectTo: `${window.location.origin}/login`,
+          data: { registration_name: name.trim(), birth_date: birthDate, gender, terms_version: TERMS_VERSION, adult: true },
+        } });
+      if (result.error) throw result.error;
+      if (mode === 'LOGIN' && !result.data.session) throw new Error('Session not confirmed');
+      return result.data;
+    }), data => {
+      setPassword('');
+      if (data.session) useAuthStore.getState().setSession(data.session);
+      else {
+        // Auth can return an obfuscated existing user: don't claim creation or disclose existence.
+        setNotice('Pedido recebido. Se o registo for possível, receberás um email para confirmar a conta. Depois entra com o email e a password. Consulta também o spam.');
+        setMode('LOGIN'); setName(''); setBirthDate(''); setGender('undisclosed'); setLegalAccepted(false);
+      }
     });
   };
-
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setValidationError('');
-    if (!validEmailOtp(otp)) {
-      setValidationError('Introduz o código completo do email, entre 6 e 10 dígitos.');
-      return;
-    }
-    await operation.run('verify', (current, signal) => withScopedAuth(current, signal, async auth => {
-      const result = await auth.verifyOtp({ email: destination, token: otp, type: 'email' });
-      if (result.error) throw result.error;
-      if (!result.data.session) throw new Error('Session not confirmed');
-      return result.data.session;
-    }), session => useAuthStore.getState().setSession(session));
-  };
-
-  return (
-    <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-8">
-      <div className="text-center space-y-2">
-        <h1 className="text-4xl font-bold text-white tracking-tighter">Aquecimento</h1>
-        <p className="text-slate-400 text-sm">Conversas temporárias. Para maiores de 18 anos com email @student.uc.pt.</p>
-      </div>
-
-      <div className="w-full max-w-sm space-y-6">
-        {error && (
-          <div role="alert" className="p-3 bg-red-950/50 border border-red-900 rounded-lg text-red-200 text-sm flex items-start gap-2">
-            <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
-            <p>{error}</p>
-          </div>
-        )}
-
-        {step === 'EMAIL' ? (
-          <form noValidate onSubmit={e => { e.preventDefault(); void sendOtp(); }} className="space-y-4">
-            <div className="space-y-1">
-              <label htmlFor="email" className="text-xs font-medium text-slate-400 uppercase tracking-wider">Email Institucional</label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => { operation.clear(); setValidationError(''); setEmail(e.target.value); }}
-                placeholder="nome@student.uc.pt"
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                required
-              />
-            </div>
-
-            <label className="flex items-start gap-3 p-3 bg-slate-800/50 rounded-xl border border-slate-700/50 cursor-pointer group">
-              <div className="flex items-center h-5">
-                <input
-                  type="checkbox"
-                  checked={legalAccepted}
-                  onChange={(e) => { operation.clear(); setValidationError(''); setLegalAccepted(e.target.checked); }}
-                  className="w-4 h-4 rounded border-slate-600 text-blue-600 focus:ring-blue-600 bg-slate-700"
-                  required
-                />
-              </div>
-              <div className="text-xs text-slate-400 leading-relaxed">
-                Declaro que tenho 18 ou mais anos e aceito os Termos de Utilização. Li a informação de privacidade. As conversas usam um buffer temporário; uma denúncia pode guardar o conteúdo disponível.
-              </div>
-            </label>
-            <div className="flex gap-4 text-xs">
-              <a href="/termos" target="_blank" rel="noopener noreferrer" className="underline">Ler termos (novo separador)</a>
-              <a href="/privacidade" target="_blank" rel="noopener noreferrer" className="underline">Ler privacidade (novo separador)</a>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading || cooldown > 0 || !email || !legalAccepted}
-              className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 text-white rounded-xl px-4 py-3 font-semibold transition-all"
-            >
-              {loading ? 'A enviar...' : cooldown > 0 ? `Tentar novamente em ${cooldown}s` : 'Continuar'}
-              {!loading && <LogIn className="w-4 h-4" />}
-            </button>
-          </form>
-        ) : (
-          <form onSubmit={handleVerifyOtp} className="space-y-4">
-            <p role="status" className="text-sm text-slate-300">Pedido de email confirmado para <strong>{destination}</strong>. Consulta a caixa de entrada e o spam.</p>
-            <div className="space-y-1">
-              <label htmlFor="otp" className="text-xs font-medium text-slate-400 uppercase tracking-wider">Código do email (6–10 dígitos)</label>
-              <input
-                id="otp"
-                type="text"
-                value={otp}
-                onChange={(e) => { operation.clear(); setValidationError(''); setOtp(e.target.value.replace(/\D/g, '').slice(0, 10)); }}
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                placeholder="000000"
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-400 text-center tracking-[0.15em] sm:tracking-[0.5em] font-mono text-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                required
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading || !validEmailOtp(otp)}
-              className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 text-white rounded-xl px-4 py-3 font-semibold transition-all"
-            >
-              {loading ? 'A verificar...' : 'Entrar'}
-            </button>
-            <button
-              type="button"
-              onClick={() => void sendOtp(true)}
-              disabled={loading || cooldown > 0}
-              className="w-full text-sm text-slate-400 disabled:opacity-50 hover:text-white transition-colors"
-            >
-              {cooldown > 0 ? `Reenviar em ${cooldown}s` : 'Reenviar código'}
-            </button>
-            <button
-              type="button"
-              onClick={() => { operation.clear(); setValidationError(''); setOtp(''); setDestination(''); setStep('EMAIL'); }}
-              className="w-full text-sm text-slate-400 hover:text-white transition-colors"
-            >
-              Voltar e corrigir email
-            </button>
-          </form>
-        )}
-      </div>
-
-      <footer className="w-full max-w-sm mt-auto pt-8 pb-4 text-center">
-        <p className="text-[10px] text-slate-400 leading-tight">
-          O Aquecimento é independente e não tem afiliação, vínculo institucional, aprovação, endosso ou suporte oficial da Universidade de Coimbra.
-        </p>
-      </footer>
+  const error = validationError || operation.error;
+  return <main className="flex-1 flex flex-col items-center justify-center p-6 gap-6">
+    <div className="text-center space-y-2">
+      <h1 className="text-4xl font-bold text-white tracking-tighter">Aquecimento</h1>
+      <p className="text-slate-400 text-sm">Conversas temporárias. Para maiores de 18 anos com email @student.uc.pt.</p>
     </div>
-  );
+    <div className="w-full max-w-sm space-y-4">
+      <div role="group" aria-label="Entrar ou criar conta" className="flex gap-2">
+        {(['LOGIN', 'REGISTER'] as const).map(option => <button key={option} type="button" aria-pressed={mode === option}
+          onClick={() => { if (option !== mode) { clear(); setPassword(''); setLegalAccepted(false); setName(''); setBirthDate(''); setGender('undisclosed'); setMode(option); } }}
+          className={`flex-1 rounded-xl px-4 py-3 font-semibold ${mode === option ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300'}`}
+        >{option === 'LOGIN' ? 'Entrar' : 'Criar conta'}</button>)}
+      </div>
+      {error && <p role="alert" className="p-3 bg-red-950/50 rounded-lg text-red-200 text-sm">{error}</p>}
+      {notice && <p role="status" className="text-sm text-slate-300">{notice}</p>}
+      <form noValidate onSubmit={submit} className="space-y-4">
+        <div><label htmlFor="email">Email Institucional</label><input id="email" type="email" autoComplete="username" value={email}
+          onChange={e => { clear(); setEmail(e.target.value); }} placeholder="nome@student.uc.pt" className={fieldClass} required /></div>
+        <div><label htmlFor="password">Password</label><input id="password" type="password" autoComplete={mode === 'LOGIN' ? 'current-password' : 'new-password'} value={password}
+          onChange={e => { clear(); setPassword(e.target.value); }} className={fieldClass} required aria-describedby={mode === 'REGISTER' ? 'password-help' : undefined} />
+          {mode === 'REGISTER' && <p id="password-help" className="text-xs text-slate-400">Entre 12 e 128 caracteres. Usa uma password única.</p>}</div>
+        {mode === 'REGISTER' && <>
+          <div><label htmlFor="name">Nome</label><input id="name" autoComplete="nickname" maxLength={80} value={name}
+            onChange={e => { clear(); setName(e.target.value); }} className={fieldClass} required />
+            <p className="text-xs text-slate-400">Pode ser o nome pelo qual queres ser tratado. Não aparece ao outro participante.</p></div>
+          <div><label htmlFor="birth-date">Data de nascimento</label><input id="birth-date" type="date" autoComplete="bday" min="1900-01-01" value={birthDate}
+            onChange={e => { clear(); setBirthDate(e.target.value); }} className={fieldClass} required /></div>
+          <div><label htmlFor="gender">Género</label><select id="gender" value={gender} onChange={e => { clear(); setGender(e.target.value as Gender); }} className={fieldClass}>
+            <option value="undisclosed">Prefiro não divulgar</option><option value="male">Masculino</option><option value="female">Feminino</option>
+          </select></div>
+          <p className="text-xs text-slate-400">Nome, nascimento e género ficam privados. A data declarada não é prova documental de idade.</p>
+          <label className="flex items-start gap-3 p-3 bg-slate-800/50 rounded-xl border border-slate-700/50">
+            <input type="checkbox" checked={legalAccepted} onChange={e => { clear(); setLegalAccepted(e.target.checked); }} required className="mt-1 shrink-0" />
+            <span className="text-xs text-slate-400">Declaro que tenho 18 ou mais anos e aceito os Termos de Utilização. Li a informação de privacidade. As conversas usam um buffer temporário; uma denúncia pode guardar o conteúdo disponível.</span>
+          </label>
+        </>}
+        <div className="flex gap-4 text-xs"><a href="/termos" target="_blank" rel="noopener noreferrer" className="underline">Ler termos (novo separador)</a>
+          <a href="/privacidade" target="_blank" rel="noopener noreferrer" className="underline">Ler privacidade (novo separador)</a></div>
+        <button type="submit" disabled={operation.loading || !email || !password || (mode === 'REGISTER' && !legalAccepted)}
+          className="w-full bg-blue-600 rounded-xl px-4 py-3 font-semibold disabled:opacity-50">
+          {operation.loading ? 'A confirmar...' : mode === 'LOGIN' ? 'Iniciar sessão' : 'Registar conta'}
+        </button>
+      </form>
+      {mode === 'LOGIN' && <>
+        <a href="/recuperar-password" className="block text-sm underline">Esqueci-me da password</a>
+        <button type="button" disabled={operation.loading} onClick={() => void resendConfirmation()} className="text-sm underline disabled:opacity-50">Reenviar confirmação do email</button>
+      </>}
+    </div>
+    <footer className="w-full max-w-sm pt-4 text-center text-[10px] text-slate-400">O Aquecimento é independente e não tem afiliação, vínculo institucional, aprovação, endosso ou suporte oficial da Universidade de Coimbra.</footer>
+  </main>;
 }

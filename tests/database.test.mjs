@@ -62,7 +62,7 @@ test('PostgreSQL roles, consent, room lifecycle and account deletion', async t =
       CREATE ROLE authenticated NOLOGIN;
       CREATE ROLE service_role NOLOGIN BYPASSRLS;
       CREATE SCHEMA auth; CREATE SCHEMA realtime; CREATE SCHEMA cron;
-      CREATE TABLE auth.users(id uuid PRIMARY KEY, email text);
+      CREATE TABLE auth.users(id uuid PRIMARY KEY, email text, raw_user_meta_data jsonb DEFAULT '{}'::jsonb, email_confirmed_at timestamptz DEFAULT now());
       CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS
         'SELECT nullif(current_setting(''request.jwt.claim.sub'', true), '''')::uuid';
       CREATE FUNCTION realtime.topic() RETURNS text LANGUAGE sql STABLE AS
@@ -105,6 +105,33 @@ test('PostgreSQL roles, consent, room lifecycle and account deletion', async t =
     for (const filename of readdirSync('supabase/migrations').filter(name => name > '20261002231850_secure_chat_lifecycle.sql' && name.endsWith('.sql')).sort()) {
       await db.exec(readFileSync(`supabase/migrations/${filename}`, 'utf8').replace(/\bnow\(\)/g, 'public.test_now()'));
     }
+
+    await t.test('private registration: server age/consent validation, own-only reads, confirmation and metadata isolation', async () => {
+      const data = { registration_name: ' Nome privado ', birth_date: '2000-01-01', gender: 'undisclosed', adult: true, terms_version: '2.0' };
+      for (const change of [{ birth_date: '2008-10-03' }, { birth_date: '2027-01-01' }, { birth_date: '2000-02-30' },
+        { birth_date: '1899-12-31' }, { birth_date: null }, { registration_name: '' }, { registration_name: 'x'.repeat(81) },
+        { gender: 'other' }, { gender: null }, { adult: false }, { adult: 'true' }, { terms_version: '1.1' }]) {
+        const id = randomUUID();
+        await denied(() => db.query('INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES($1,$2,$3)', [id, 'bad@student.uc.pt', JSON.stringify({ ...data, ...change })]));
+        assert.equal((await db.query('SELECT count(*)::int AS n FROM auth.users WHERE id=$1', [id])).rows[0].n, 0);
+      }
+      await denied(() => db.query('INSERT INTO auth.users(id,email) VALUES($1,$2)', [randomUUID(), 'missing@student.uc.pt']));
+      const id = randomUUID();
+      // Exactly 18 at the fixture's Lisbon date is accepted, but email is unconfirmed.
+      await db.query('INSERT INTO auth.users(id,email,raw_user_meta_data,email_confirmed_at) VALUES($1,$2,$3,NULL)', [id, 'private@student.uc.pt', JSON.stringify({ ...data, birth_date: '2008-10-02' })]);
+      const own = await as(id, 'SELECT name,birth_date,gender FROM public.account_details');
+      assert.equal(own.length, 1); assert.equal(own[0].name, 'Nome privado'); assert.equal(own[0].gender, 'undisclosed');
+      assert.equal((await as(a, 'SELECT * FROM public.account_details WHERE user_id=$1', [id])).length, 0);
+      await denied(() => as(null, 'SELECT * FROM public.account_details', [], 'anon'));
+      for (const sql of ['INSERT INTO public.account_details(user_id,name,birth_date,gender) VALUES($1,\'Spoof\',\'2000-01-01\',\'male\')',
+        'UPDATE public.account_details SET gender=\'male\' WHERE user_id=$1', 'DELETE FROM public.account_details WHERE user_id=$1']) await denied(() => as(id, sql, [id]));
+      await denied(() => rpc(id, 'find_or_join_match'));
+      await db.query('UPDATE auth.users SET email_confirmed_at=now(),raw_user_meta_data=$2 WHERE id=$1', [id, JSON.stringify({ birth_date: '2026-01-01', adult: false, terms_version: '1.0', gender: 'male' })]);
+      assert.equal((await as(id, 'SELECT gender FROM public.account_details'))[0].gender, 'undisclosed');
+      assert.equal((await rpc(id, 'find_or_join_match')).status, 'waiting');
+      await rpc(id, 'delete_own_user_account');
+      assert.equal((await db.query('SELECT count(*)::int AS n FROM public.account_details WHERE user_id=$1', [id])).rows[0].n, 0);
+    });
 
     await t.test('A01 approval is admin-only across INSERT, NULL, upsert and inherited column grants', async () => {
       for (const approval of [true, false, null]) {
@@ -360,7 +387,7 @@ test('PostgreSQL roles, consent, room lifecycle and account deletion', async t =
       await as(b, 'SELECT public.persist_room_report($1,$2,$3)', [fresh.room_id, b, '[]'], 'service_role');
       assert.deepEqual((await db.query('SELECT transcript FROM public.reported_chats WHERE id=$1', [saved[0].id])).rows[0].transcript, evidence);
       // Restore a disposable fixture for the independent concurrency scenario.
-      await db.query('INSERT INTO auth.users(id,email) VALUES($1,$2)', [c, 'c@student.uc.pt']);
+      await db.query('INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES($1,$2,$3)', [c, 'c@student.uc.pt', JSON.stringify({ registration_name: 'Fixture', birth_date: '2000-01-01', gender: 'undisclosed', adult: true, terms_version: '2.0' })]);
       await rpc(c, 'accept_terms', ['2.0', true]);
     });
 

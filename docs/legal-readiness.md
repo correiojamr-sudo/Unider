@@ -18,12 +18,20 @@ rotas públicas `/termos` e `/privacidade` e no modal. Inclui responsável,
 contacto, conduta, limites, denúncias, conservação, destinatários e direitos.
 Aceitação contratual não é consentimento genérico RGPD.
 
-Login exige declaração antes do OTP. O modal pede confirmação explícita;
+O registo novo usa email/password, nome de uso, nascimento declarado, género
+(com «prefiro não divulgar» por defeito) e aceitação explícita. Login existente não cria conta nem
+repete a checkbox de registo. O modal pede confirmação explícita quando necessária;
 `accept_terms(text,boolean)` regista versão, data e `adult_declared_at`.
 `eligible` exige os três campos e conta não banida. Não é prova documental de
-idade: pode haver declarações falsas. Auth pode criar conta antes da aceitação
-servidor; a declaração impede participação no chat, não garante ausência de
-contas menores. Não recolher documentos/data de nascimento sem avaliação própria.
+idade: pode haver declarações falsas. A migration de dados privados valida idade
+e aceitação no trigger de criação, mas não comprova documentos nem leitura.
+Contas antigas não têm data inventada; mantêm declaração e nova aceitação.
+Nome/nascimento/género são privados, também existem em metadados Auth e são
+eliminados com a conta. O responsável deve justificar a necessidade de conservar
+a data completa (em vez de só maioridade) e de recolher nome/género; género não
+tem uso de emparelhamento nem finalidade analítica no código atual. O pedido do
+proprietário não substitui fundamento jurídico/minimização. Não anunciar
+conformidade antes dessa avaliação; não recolher documentos de identificação.
 
 Migration nova `20261010145007_adult_terms_v2.sql`: recusa clientes antigos e
 declarações falsas/nulas, sem atribuir maioridade a contas existentes. A versão
@@ -35,6 +43,7 @@ de release; qualquer alteração material posterior exige nova versão.
 | Dados / finalidade | Conservação no código | Fundamento proposto, não parecer |
 | --- | --- | --- |
 | Email, ID, perfil, aceitação, declaração / acesso | Até eliminação da conta/perfil | Contrato, art. 6.º/1/b, só no necessário |
+| Nome de uso, nascimento declarado, género opcional / registo privado | `account_details` e metadados Auth até eliminação da conta; backups têm ciclos próprios | Validar necessidade, fundamento e alternativa menos intrusiva antes de publicar; não presumir necessidade contratual para género |
 | Fila, intenções, salas / emparelhamento | Limpeza de leases expiradas; intenções anteriores ao dia Lisboa menos um; salas hard close mais um dia | Necessidade contratual |
 | Mensagens / entrega e recuperação | Redis: buffer inteiro 300 s após último append novo; deduplicação 600 s; sessionStorage tem ciclo independente | Contrato para dados comuns; categorias especiais exigem avaliação própria |
 | Denúncia, conteúdo disponível, IDs/data/estado / abuso | Limpeza de registos com mais de 30 dias; texto pode identificar após eliminação | Interesse legítimo sujeito a ponderação; arts. 9.º/10.º não resolvidos automaticamente |

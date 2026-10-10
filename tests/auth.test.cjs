@@ -205,3 +205,24 @@ test('scoped primary key matches the installed SupabaseClient, including localho
     });
   } finally { await client.auth.dispose(); }
 });
+
+test('installed SDK password login/signup stage credentials; obsolete requests never overwrite another session', async () => {
+  for (const method of ['signInWithPassword', 'signUp']) for (const obsolete of [false, true]) {
+    const local = storage(); const pending = deferred(); let current = true;
+    const session = { access_token: 'fixture-only', refresh_token: 'fixture-only', expires_in: 3600,
+      expires_at: Date.now() / 1000 + 3600, user: { id: 'password-fixture' }, token_type: 'bearer' };
+    const { withScopedAuth } = loader({}, { localStorage: local, fetch: async () => {
+      await pending.promise;
+      return new Response(JSON.stringify(session), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } })('src/lib/authSession.ts');
+    const work = withScopedAuth(() => current, new AbortController().signal,
+      auth => auth[method]({ email: 'fixture@student.uc.pt', password: 'fixture-password-123' }));
+    const outcome = work.then(result => ({ result }), error => ({ error }));
+    await tick();
+    if (obsolete) { current = false; local.setItem('sb-localhost-auth-token', 'another-session'); }
+    pending.resolve(); const checked = await outcome;
+    if (obsolete) { assert.ok(checked.error); assert.equal(local.getItem('sb-localhost-auth-token'), 'another-session'); }
+    else { assert.equal(checked.result.error, null); assert.equal(JSON.parse(local.getItem('sb-localhost-auth-token')).user.id, 'password-fixture'); }
+    assert.ok(!Array.from(['password', 'registration_name']).some(key => local.getItem(key)));
+  }
+});

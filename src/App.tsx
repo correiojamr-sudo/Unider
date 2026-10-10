@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import Lobby from './pages/Lobby';
 import Chat from './pages/Chat';
 import Legal from './pages/Legal';
+import RecoverPassword from './pages/RecoverPassword';
 import { useTimeSync } from './hooks/useTimeSync';
 import { AUTH_STORAGE_CHANNEL, observeAuthSession } from './lib/authSession';
 
@@ -45,6 +46,7 @@ const AppRoutes = () => {
     <Routes>
       <Route path="/termos" element={<Legal />} />
       <Route path="/privacidade" element={<Legal privacy />} />
+      <Route path="/recuperar-password" element={<RecoverPassword />} />
       <Route path="/login" element={<AuthRoute><Login /></AuthRoute>} />
       <Route path="/lobby" element={<ProtectedRoute><Lobby /></ProtectedRoute>} />
       <Route path="/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
