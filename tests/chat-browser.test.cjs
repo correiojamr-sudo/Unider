@@ -90,7 +90,7 @@ test('isolated chat browser recovery and stale-response regressions', {
       from(table) {
         const query = { select() { return query; }, eq() { return query; },
           abortSignal() { return query; },
-          single() { const reply = Promise.resolve({ data: { terms_version: '2.0' }, error: null }); reply.abortSignal = () => reply; return reply; },
+          single() { const reply = Promise.resolve({ data: { terms_version: '2.1' }, error: null }); reply.abortSignal = () => reply; return reply; },
           limit() { return Promise.resolve({ data: [], error: null }); } };
         if (!['profiles', 'icebreaker_suggestions'].includes(table)) throw new Error('Unexpected table');
         return query;
@@ -156,6 +156,33 @@ test('isolated chat browser recovery and stale-response regressions', {
       const input = await page.getByRole('textbox', { name: 'Mensagem', exact: true }).boundingBox();
       assert.ok(input.y >= 0 && input.y + input.height <= 568);
       await page.setViewportSize({ width: 390, height: 844 });
+    });
+
+    await t.test('peer name is rendered as text and replaced on a new chat context, with legacy fallback', async () => {
+      await reset(); await ready();
+      await page.getByText('A conversar com Colega', {exact:true}).waitFor();
+      const name = '<img src=x onerror=alert(1)> João';
+      await page.evaluate(name => { window.fixture.serverRoom.peer_name = name; }, name);
+      await page.getByText('A conversar com ' + name, {exact:true}).waitFor();
+      assert.equal(await page.locator('header img').count(), 0);
+      await page.getByText(name, {exact:true}).waitFor();
+      await page.evaluate(() => {
+        window.fixture.serverRoom.peer_name = null;
+        window.stores.chat.getState().setRoom('room-b', 'carol');
+      });
+      await page.getByText('A conversar com Colega', {exact:true}).waitFor();
+      assert.equal(await page.getByText(name, {exact:true}).count(), 0);
+    });
+
+    await t.test('full Unicode display name does not reject the room or overflow a narrow viewport', async () => {
+      await reset(); await ready();
+      const name = '𠮷'.repeat(80);
+      await page.evaluate(name => { window.fixture.serverRoom.peer_name = name; }, name);
+      await page.setViewportSize({width:320,height:568});
+      await page.getByText('A conversar com ' + name, {exact:true}).waitFor();
+      await ready();
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      await page.setViewportSize({width:390,height:844});
     });
 
     await t.test('history recovers a message sent while unsubscribed', async () => {

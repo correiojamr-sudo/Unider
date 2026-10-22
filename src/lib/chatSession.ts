@@ -1,7 +1,11 @@
+import { validRegistrationName } from './registration.ts';
+
 export interface RoomState {
   status: 'matched';
   room_id: string;
   peer_id: string;
+  // Optional for compatibility with the deployed pre-name contract and legacy accounts.
+  peer_name?: string | null;
   expires_at: string;
   hard_close_at: string;
   decision_until: string;
@@ -17,6 +21,8 @@ export function isRoomState(data: unknown, roomId?: string | null): data is Room
   const value = data as Record<string, unknown>;
   return value.status === 'matched' && typeof value.room_id === 'string' && value.room_id.length > 0
     && (!roomId || value.room_id === roomId) && typeof value.peer_id === 'string'
+    && (value.peer_name === undefined || value.peer_name === null || typeof value.peer_name === 'string'
+      && value.peer_name === value.peer_name.trim() && validRegistrationName(value.peer_name))
     && ['expires_at', 'hard_close_at', 'decision_until', 'server_now'].every(key => typeof value[key] === 'string' && Number.isFinite(Date.parse(value[key] as string)))
     && (value.ended_at === null || typeof value.ended_at === 'string' && Number.isFinite(Date.parse(value.ended_at)))
     && (value.end_reason === null || typeof value.end_reason === 'string')

@@ -5,7 +5,7 @@ const { load } = require('./load-ts.cjs');
 const legal = load('src/lib/legal.ts');
 
 test('legal identity, privacy contact and acceptance version are consistent', () => {
-  assert.equal(legal.TERMS_VERSION, '2.0');
+  assert.equal(legal.TERMS_VERSION, '2.1');
   assert.equal(legal.PRIVACY_EMAIL, 'aquecimentoapp@gmail.com');
   assert.equal(legal.CONTROLLER_NAME, 'João António Pires Martins dos Santos Rodrigues');
   const terms = legal.termsSections.map(section => section.text).join(' ');
@@ -16,8 +16,11 @@ test('legal identity, privacy contact and acceptance version are consistent', ()
   assert.match(privacy, /buffer inteiro/);
   assert.match(privacy, /CNPD/);
   assert.match(privacy, /Sugestões podem permanecer/);
+  assert.match(privacy, /nome de apresentação, visível ao outro participante/);
+  assert.match(privacy, /email, data de nascimento e género não são partilhados/);
+  assert.doesNotMatch(privacy, /nome identifica o perfil privado/);
   assert.ok(terms.includes(legal.CONTROLLER_NAME) && privacy.includes(legal.PRIVACY_EMAIL));
-  const sql = readFileSync('supabase/migrations/20261010145007_adult_terms_v2.sql', 'utf8');
+  const sql = readFileSync('supabase/migrations/20261010183634_peer_display_name_terms_v21.sql', 'utf8');
   assert.ok(sql.includes(`terms_version = '${legal.TERMS_VERSION}'`));
   assert.match(sql, /adult_declared_at IS NOT NULL/);
   assert.match(sql, /p_adult IS DISTINCT FROM true/);

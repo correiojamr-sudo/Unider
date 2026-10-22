@@ -152,10 +152,21 @@ test('isolated auth browser: password login/signup/recovery, late replies, Terms
     await page.getByRole('status').filter({ hasText: 'Pedido recebido' }).waitFor();
     const signup = await page.evaluate(() => window.fixture.calls[0].args);
     assert.equal(signup.email, 'nova@student.uc.pt');
-    assert.deepEqual(signup.options.data, { registration_name: 'Nome privado', birth_date: '2000-01-01', gender: 'undisclosed', terms_version: '2.0', adult: true });
+    assert.deepEqual(signup.options.data, { registration_name: 'Nome privado', birth_date: '2000-01-01', gender: 'undisclosed', terms_version: '2.1', adult: true });
     assert.equal(signup.options.emailRedirectTo, origin + '/login');
     assert.equal(await page.evaluate(() => window.stores.auth.getState().session), null);
     assert.equal(await page.locator('#password').inputValue(), '');
+
+    // The browser must not silently truncate names that PostgreSQL accepts.
+    await reset(); await register();
+    const unicodeName = '𠮷'.repeat(80);
+    await page.locator('#name').fill(unicodeName);
+    assert.equal(await page.locator('#name').inputValue(), unicodeName);
+    assert.equal(await page.locator('#name').getAttribute('aria-describedby'), 'name-help');
+    await page.getByRole('checkbox').check();
+    await page.getByRole('button', { name: 'Registar conta' }).click();
+    await page.getByRole('status').filter({ hasText: 'Pedido recebido' }).waitFor();
+    assert.equal(await page.evaluate(() => window.fixture.calls[0].args.options.data.registration_name), unicodeName);
 
     // Late login success/failure cannot authenticate after correction or a mode switch.
     for (const failure of [false, true]) {

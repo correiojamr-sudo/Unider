@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const { load } = require('./load-ts.cjs');
-const { roomView } = load('src/lib/chatSession.ts');
+const { roomView, isRoomState } = load('src/lib/chatSession.ts');
 const start = Date.parse('2026-10-02T21:30:00Z');
 const room = { expires_at: new Date(start + 120000).toISOString(),
   hard_close_at: new Date(start + 1200000).toISOString(),
@@ -19,6 +19,13 @@ test('server extension resumes active state without local read-only residue', ()
 test('hard cutoff uses >=, never exact-second equality', () => {
   assert.equal(roomView(room, start + 1201000).phase, 'closed');
   assert.equal(roomView({ ...room, ended_at: new Date(start).toISOString() }, start).phase, 'closed');
+});
+test('peer display names validate without rejecting the previous contract or legacy null names', () => {
+  const state = { ...room, status:'matched', room_id:'room', peer_id:'peer', end_reason:null,
+    extended_once:false, extended:false, peer_extended:false, server_now:new Date(start).toISOString() };
+  assert.equal(isRoomState(state), true);
+  for (const peer_name of [null, 'João', '𠮷'.repeat(80), '<img src=x onerror=alert(1)>']) assert.equal(isRoomState({...state,peer_name}), true);
+  for (const peer_name of ['', ' Bob ', 'x'.repeat(81), '𠮷'.repeat(81), 'Bob\n', 42, {}]) assert.equal(isRoomState({...state,peer_name}), false);
 });
 test('store deduplicates delivery/retry and new room clears old messages', () => {
   let state;

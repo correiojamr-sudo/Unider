@@ -70,7 +70,7 @@ test('isolated browser: refresh, cancellation, terms, cutoffs and suggestion ret
           abortSignal(signal) { (window.fixture.signals ||= []).push({ kind: 'terms', signal }); return query; },
           single() {
             window.fixture.calls.push('terms');
-            const reply = () => ({ data: { terms_version: window.fixture.terms === 'accepted' ? '2.0' : null }, error: null });
+            const reply = () => ({ data: { terms_version: window.fixture.terms === 'accepted' ? '2.1' : null }, error: null });
             if (window.fixture.terms === 'pending') return abortable(new Promise((resolve, reject) => window.fixture.pending.push(failure => failure ? reject(new Error('fixture offline')) : resolve(reply()))), 'terms');
             if (window.fixture.terms === 'error') return abortable(Promise.reject(new Error('fixture offline')), 'terms');
             return abortable(Promise.resolve(reply()), 'terms');

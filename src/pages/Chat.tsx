@@ -167,6 +167,8 @@ function ChatContent() {
     </div>}
   </div>;
   const displayedError = error || (sessionError ? sessionIssueText(sessionError) : '');
+  // This name comes only from the authorized room response, never from broadcasts or editable metadata.
+  const peerName = room?.peer_name || 'Colega';
 
   if (!roomId) return (
     <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-4">
@@ -181,6 +183,7 @@ function ChatContent() {
   return (
     <div className="flex-1 flex flex-col h-[100dvh]">
       <header className="bg-slate-800 border-b border-slate-700 p-4 space-y-3">
+        <p className="font-semibold break-words">A conversar com {peerName}</p>
         <div className="flex flex-wrap gap-2 justify-between items-center">
           <div className={`font-mono text-xl font-bold ${timeLeft <= 60 ? 'text-red-400' : 'text-blue-400'}`}>
             {formatTimeCountdown(timeLeft)}
@@ -199,7 +202,7 @@ function ChatContent() {
           const mine = message.sender_id === user?.id;
           return (
             <div key={chatMessageKey(message)} className={`flex flex-col max-w-[80%] ${mine ? 'self-end items-end' : 'self-start items-start'}`}>
-              <span className="text-[10px] text-slate-400 mb-1">{mine ? 'Tu' : 'Colega'}</span>
+              <span className="text-[10px] text-slate-400 mb-1 break-words">{mine ? 'Tu' : peerName}</span>
               <div className={`px-4 py-2 rounded-2xl break-words ${mine ? 'bg-blue-600' : 'bg-slate-800'}`}>{message.text}</div>
             </div>
           );

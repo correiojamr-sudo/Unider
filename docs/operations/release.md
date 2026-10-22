@@ -1,5 +1,26 @@
 # Serviços e lançamento coordenado
 
+## Candidato posterior: nome de apresentação 2.1
+
+`20261010183634_peer_display_name_terms_v21.sql` e frontend 2.1 são locais, ainda
+não publicados. A migration altera elegibilidade, aceitação e trigger para 2.1,
+sem backfill; só fornece `peer_name` quando ambos aceitaram a nova informação.
+Exige atualização coordenada migration → Pages, em ambiente/janela autorizados;
+Functions e segredos não mudam. Não publicar esta camada isolada: clientes 2.0
+não conseguem aceitar 2.1 nem criar novos registos no trigger atualizado.
+Não voltar a aplicar o bootstrap/incrementais já registados para esta mudança.
+
+## Estado alojado mais recente — 10/10/2026
+
+As quatro incrementais e quatro Functions foram aplicadas/publicadas com
+autorização no projeto `ymzcsoyylrpkdflnlvkg`. Consultar o
+[registo de sincronização](../validation/2026-10-10-supabase-sync.md) antes de
+qualquer operação: contém o mapa entre versões locais/remotas e a reconciliação
+da colisão de histórico. Não reaplicar estas migrations nem executar `db push`
+sem comparar o histórico. As notas de «não publicado» abaixo descrevem os
+candidatos anteriores. SMTP e validação completa continuam pendentes; nenhuma
+publicação Cloudflare foi realizada nesta sincronização.
+
 ## Antes de tocar num serviço
 
 A preparação legal 2.0 e a marca Aquecimento são um candidato não publicado
