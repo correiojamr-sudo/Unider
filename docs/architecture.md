@@ -73,9 +73,12 @@ O servidor exige confirmação de email, consentimento atual e ausência de ban.
 Recuperação por ligação Auth permite definir uma password nas contas antigas;
 ver detalhes e pré-requisitos em [contratos](contracts.md).
 
-`App` subscreve Auth antes da leitura inicial. Eventos ou uma revisão de sessão
-mais recente vencem resultados/erros antigos de `getSession`; falha inicial
-termina loading e apresenta retry. O contador Auth invalida respostas de login,
+`App` subscreve Auth antes da leitura inicial. Eventos confirmados ou uma revisão
+de sessão mais recente vencem resultados/erros antigos de `getSession`.
+`INITIAL_SESSION` nulo também pode indicar falha transitória de renovação: só a
+leitura explícita sem erro confirma ausência; o evento isolado não apaga sala/fila.
+Falha inicial termina loading e apresenta retry, preservando contexto. Um logout
+efetivo continua a limpá-lo. O contador Auth invalida respostas de login,
 termos e definições quando muda a identidade, mesmo se esta for depois reutilizada.
 Desmontagem, edição e substituição de uma operação invalidam também os seus callbacks.
 

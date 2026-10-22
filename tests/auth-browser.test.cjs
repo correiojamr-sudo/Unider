@@ -56,7 +56,7 @@ test('isolated auth browser: password login/signup/recovery, late replies, Terms
         signInWithOtp: args => request('send', args, () => ({ data: { session: null }, error: null })),
         verifyOtp: args => request('verify', args, () => ({ data: { session: { user: { id: 'verified' } } }, error: null })),
         signOut: () => request('logout', {}, () => ({ error: null })),
-        getSession: () => request('startup', {}, () => ({ data: { session: null }, error: null })),
+        getSession: () => request('startup', {}, () => ({ data: { session: f().startupSession ?? null }, error: null })),
         onAuthStateChange: cb => { f().events.push(cb); return { data: { subscription: { unsubscribe() { f().events = f().events.filter(item => item !== cb); } } } }; },
       },
       rpc: (name, args) => request(name, args, () => ({ data: name === 'accept_terms' ? true : null, error: null })),
@@ -242,6 +242,27 @@ test('isolated auth browser: password login/signup/recovery, late replies, Terms
     await page.evaluate(() => window.fixture.events.forEach(cb => cb('SIGNED_IN', { user: { id: 'newer-after-notice' } })));
     await finish('startup'); await finish('startup');
     assert.equal(await page.evaluate(() => window.stores.auth.getState().user.id), 'newer-after-notice');
+    // The SDK may emit an empty initial session after a retryable refresh
+    // failure while keeping credentials. It must not erase the saved room.
+    await reset(); await mode('startup', 'pending');
+    await page.evaluate(() => {
+      window.fixture.login('alice'); window.stores.chat.getState().setRoom('room-a', 'bob');
+      window.fixture.render('app');
+    });
+    await page.waitForFunction(() => window.fixture.pending.some(item => item.name === 'startup'));
+    await page.evaluate(() => window.fixture.events.forEach(cb => cb('INITIAL_SESSION', null)));
+    await finish('startup', true); await finish('startup', true);
+    await page.getByText('A sessão inicial não foi confirmada.', { exact: false }).waitFor();
+    assert.equal(await page.evaluate(() => window.stores.chat.getState().roomId), 'room-a');
+    await page.evaluate(() => {
+      window.fixture.modes.startup = 'success'; window.fixture.startupSession = { user: { id: 'alice' } };
+    });
+    await page.getByRole('button', { name: 'Tentar novamente', exact: true }).click();
+    await page.waitForFunction(() => !document.body.textContent.includes('A sessão inicial não foi confirmada.'));
+    assert.equal(await page.evaluate(() => window.stores.auth.getState().user.id), 'alice');
+    assert.equal(await page.evaluate(() => window.stores.chat.getState().roomId), 'room-a');
+    await page.evaluate(() => window.fixture.events.forEach(cb => cb('SIGNED_OUT', null)));
+    assert.equal(await page.evaluate(() => window.stores.chat.getState().roomId), null);
     await reset(); await mode('startup', 'throw'); await page.evaluate(() => window.fixture.render('app'));
     await page.getByText('A sessão inicial não foi confirmada.', { exact: false }).waitFor();
     await page.locator('#email').waitFor();

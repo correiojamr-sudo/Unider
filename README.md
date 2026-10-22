@@ -9,11 +9,14 @@ Upstash Redis para buffer temporário e deduplicação.
 
 ## Estado
 
-As correções do PR #6 foram integradas para testes pré-abertura. A validação
-ponta a ponta e a configuração de email permanecem pendentes no último registo.
+Em 22/10/2026, o PR #11 foi integrado em `b7a62bc` e a versão 2.1 foi publicada
+no Supabase e no Cloudflare Pages. Ver o
+[registo da publicação e respetivos limites](docs/validation/2026-10-22-release.md).
+A validação autenticada ponta a ponta e a configuração de email continuam pendentes.
 Não tratar código compilado ou CI verde como autorização para abrir a plataforma.
 Ver [estado e prioridades](docs/project-status.md).
-Documentos legais e aceitação 2.0 preparados localmente; ver
+Termos/privacidade e aceitação 2.1 publicados; o nome de apresentação é visível
+ao interlocutor autorizado, não num diretório público. Ver
 [preparação jurídica](docs/legal-readiness.md) antes de publicar ou abrir acesso.
 
 ## Começar a desenvolver

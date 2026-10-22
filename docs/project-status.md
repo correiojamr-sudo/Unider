@@ -1,5 +1,123 @@
 # Estado e trabalho pendente
 
+## Publicação GitHub autorizada; sem merge ou deploy — 22/10/2026
+
+O proprietário pediu guardar no GitHub as alterações revistas: correção de
+arranque Auth, procedimento de testes alojados, regressões e documentação.
+Base sincronizada `b7a62bc` na branch existente `fix/unider-functional-recovery`.
+Os registos «sem commit/push» abaixo descrevem as respetivas fases anteriores;
+não são uma indicação de que a publicação Git continue por autorizar.
+
+Suite local final: 131 aprovados, dois testes concorrentes excluídos porque
+PGlite tem uma ligação; não foram removidos nem marcados aprovados. O workflow
+`Review regressions`, acionado pelo PR, usa PostgreSQL 17 para verificar:
+(1) pedidos simultâneos não criam várias salas abertas por utilizador;
+(2) cancelamento impede um match tardio mesmo com transações sobrepostas.
+Só o resultado desse CI no commit publicado confirma estes dois cenários.
+Lint/build locais passaram. Canais privados e Functions/Redis alojados continuam
+inconclusivos, independentemente do resultado do CI. Sem autorização de merge,
+deploy, novas configurações ou execução adicional de contas nesta publicação.
+
+## Diagnóstico do Realtime e novo procedimento local — 22/10/2026
+
+Logs da primeira tentativa mostram inicialização, `MissingPartition`, criação
+automática de partições e início da replicação no mesmo segundo. Arranque a frio
+é causa provável, não única causa provada. Corrigido o procedimento local para
+observar recuperação durante até 20 s, manter heartbeats e guardar diagnósticos
+sanitizados. Corrigida também a observação WS: o SDK instalado usa frames binários,
+que o observador anterior só em JSON não reconhecia.
+
+Suite serial: 131 aprovados, zero falhas/cancelamentos e dois excluídos por
+concorrência PGlite; cinco fixtures Chrome, lint e build sintético passaram.
+
+Nova tentativa de até três contas autorizada pelo proprietário, mas ainda não
+executada: a preparação ultrapassou a janela de hoje e a chave local está ausente.
+O novo perfil não aceita datas arbitrárias nem remove a marca antiga. Sem mudar
+horários, políticas ou código da app publicada. Falta decidir nova janela/data
+ou ambiente de teste isolado para validar fora do horário e repor a chave local.
+Ver [revisão, hashes e limites](validation/2026-10-22-hosted-retry.md).
+
+## Tentativa alojada das 22:30 inconclusiva; contas limpas — 22/10/2026
+
+Tentativa única executada; servidor confirmou 22:30:50 Lisboa, preflight passou.
+Três contas sintéticas criadas, login por password confirmado e A/B emparelhados.
+A primeira subscrição privada não foi confirmada (`subscription_not_confirmed`);
+paragem de segurança antes de envio, Redis, subscrições B/C e broadcasts diretos.
+Não atribuir causa sem diagnóstico nem marcar a integração aprovada.
+
+`finally` confirmou revogação das três sessões e eliminação/ausência das três
+contas. Nenhuma reconciliação manual pendente; cópia local das credenciais
+removida após confirmar limpeza. Marca de tentativa conservada, sem repetição
+ou reagendamento. Sem alterações de serviços, contas existentes ou código.
+Falta investigar a subscrição; nova criação de fixtures exige nova autorização.
+Ver [resultado e limites](validation/2026-10-22-hosted-result.md).
+
+## Revisão local do chat sem novo defeito demonstrado — 22/10/2026
+
+Revisão delimitada, sem mudanças runtime: recuperação/estado assíncrono do chat
+e 35 testes focados aprovados, incluindo Chrome isolado; zero falhas ou exclusões.
+Não foi demonstrado um novo defeito prioritário neste âmbito; não se implementou
+uma correção especulativa. Corrigida no guia de contratos a indicação obsoleta
+de migration 2.1 ainda não aplicada. Sem commit/push/deploy, serviços ou contas
+alterados. Runner/testes da tentativa das 22:30 conservam os hashes revistos;
+agendamento inalterado. Ver [âmbito, validação e limites](validation/2026-10-22-chat-readiness.md).
+
+## Tentativa alojada A/B/C preparada e agendada — 22/10/2026
+
+Proprietário autorizou três contas sintéticas temporárias, confirmação
+administrativa sem emails e eliminação após o teste. Acesso ao painel renovado;
+chave administrativa fornecida apenas num ficheiro local ignorado, sem exposição
+em mensagens. Nenhuma conta foi criada nesta preparação.
+
+Procedimento separado `scripts/hosted/private-chat-check.mjs` revisto: alvo/data
+fixos, janela 22:30–22:43 Lisboa, recusa de atividade real, marca atómica contra
+repetição, clientes comuns separados do administrador e limpeza por IDs/marcadores
+próprios. Proteção de horário confirmada contra o serviço real: aborto antes de
+criar contas, sem consumir a tentativa. Dez regressões novas offline passaram.
+Suite completa atual: 125 aprovados, zero falhas/cancelamentos e dois excluídos
+por concorrência PGlite; cinco fixtures Chrome, lint e build sintético passaram.
+
+Tentativa única agendada nesta thread para hoje às 22:30 Europe/Lisbon; computador
+e Codex precisam de permanecer ligados. Canais/Redis reais **ainda não validados**.
+Inscrições já estavam ativas na leitura atual de Auth; confirmação de email
+mantida, sem alteração destas configurações. Não criar denúncias nem injetar
+falhas nesta tentativa. Sem commit/push/deploy. Ver
+[procedimento, hashes revistos e critérios de paragem](validation/2026-10-22-hosted-preflight.md).
+
+## Correção local do arranque Auth e guias alinhados — 22/10/2026
+
+Sobre `b7a62bc`, reproduzido com o SDK instalado: uma falha transitória de
+renovação emite `INITIAL_SESSION` nulo, embora as credenciais continuem guardadas.
+O observador tratava-o como logout, apagava o contexto do chat e ocultava o erro
+da leitura inicial. Agora a ausência exige leitura explícita sem erro; falha
+preserva contexto e permite retry. Logout efetivo e mudanças de identidade
+continuam a limpar o contexto anterior. Correção revista independentemente.
+
+Validação local serial: 115 aprovados, zero falhas/cancelamentos e dois excluídos
+por concorrência PGlite; cinco fixtures Chrome, lint e build estrutural passaram.
+Guias de entrada/publicação e privacidade alinhados com o estado 2.1 já publicado,
+sem alterar o texto dos termos ou aceitar consentimento por ninguém.
+Leitura remota: duas contas preservadas, sem salas abertas/fila; Cron de limpeza
+ativo, 288 execuções bem-sucedidas e zero falhas registadas nas últimas 24 horas.
+Isto não prova eliminação de dados sintéticos antigos nem integração Auth/Redis.
+
+Sem commit, push ou deploy desta correção. Para a integração real, solicitada
+autorização para três contas temporárias de teste, sem abrir inscrições ou alterar
+contas existentes. Ver [reprodução, gates e limites](validation/2026-10-22-entry-readiness.md).
+
+## PR #11 integrado e versão 2.1 publicada — 22/10/2026
+
+Proprietário autorizou merge e atualização necessária. CI do candidato passou;
+PR #11 integrado em `b7a62bc`, com pasta/branch sincronizadas. Após renovar a
+ligação, migration 2.1 aplicada ao projeto `ymzcsoyylrpkdflnlvkg` (histórico remoto
+`20261022104252`), com contratos e grants verificados e duas contas preservadas.
+Sem aceitar termos por ninguém ou redeploy de Functions inalteradas.
+Pages publicado depois do servidor: deployment canónico
+`2b5656a0-76bb-4698-a343-6cb7774e5ed3`, success, commit `b7a62bc`.
+Registo e termos 2.1 confirmados no site. Falta validação autenticada entre duas
+contas; não foram criadas contas nem enviados emails para testar. Ver
+[resultado, evidência e limites](validation/2026-10-22-release.md).
+
 ## Continuação do candidato 2.1 — 22/10/2026
 
 Reproduzida e corrigida a contagem UTF-16 que recusava nomes Unicode válidos

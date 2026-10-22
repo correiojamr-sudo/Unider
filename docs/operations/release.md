@@ -1,16 +1,23 @@
 # Serviços e lançamento coordenado
 
-## Candidato posterior: nome de apresentação 2.1
+## Estado publicado — 22/10/2026
 
-`20261010183634_peer_display_name_terms_v21.sql` e frontend 2.1 são locais, ainda
-não publicados. A migration altera elegibilidade, aceitação e trigger para 2.1,
-sem backfill; só fornece `peer_name` quando ambos aceitaram a nova informação.
-Exige atualização coordenada migration → Pages, em ambiente/janela autorizados;
-Functions e segredos não mudam. Não publicar esta camada isolada: clientes 2.0
-não conseguem aceitar 2.1 nem criar novos registos no trigger atualizado.
-Não voltar a aplicar o bootstrap/incrementais já registados para esta mudança.
+O PR #11 foi integrado em `b7a62bc`. A migration
+`20261010183634_peer_display_name_terms_v21.sql` foi aplicada ao projeto
+`ymzcsoyylrpkdflnlvkg` com versão remota `20261022104252`; depois foi publicado
+o frontend correspondente em Pages, deployment canónico
+`2b5656a0-76bb-4698-a343-6cb7774e5ed3`. Functions e segredos não mudaram.
+Ver [evidência e limites](../validation/2026-10-22-release.md).
 
-## Estado alojado mais recente — 10/10/2026
+Ambas as camadas usam termos 2.1, sem backfill de aceitação; `peer_name` só é
+fornecido quando ambos são elegíveis. Não reaplicar esta migration, o bootstrap
+ou incrementais já registados. Comparar sempre histórico remoto e versões locais:
+os timestamps não coincidem em todos os registos. As instruções de candidatos
+abaixo são contexto histórico, não uma fila de migrations por executar.
+Validação autenticada ponta a ponta e email continuam pendentes; publicação
+não equivale a aprovação de abertura.
+
+## Histórico da sincronização alojada — 10/10/2026
 
 As quatro incrementais e quatro Functions foram aplicadas/publicadas com
 autorização no projeto `ymzcsoyylrpkdflnlvkg`. Consultar o
@@ -23,12 +30,11 @@ publicação Cloudflare foi realizada nesta sincronização.
 
 ## Antes de tocar num serviço
 
-A preparação legal 2.0 e a marca Aquecimento são um candidato não publicado
-nos serviços; a disponibilização em GitHub não equivale a deploy.
-Ver [pendências jurídicas](../legal-readiness.md) antes de publicar. A migration
-`20261010145007_adult_terms_v2.sql` exige nova aceitação/declaração de maioridade
-e recusa o RPC antigo de um argumento e a versão 1.1. Coordenar com frontend
-2.0 após as incrementais anteriores; não publicar uma camada isoladamente.
+Termos/privacidade 2.1 e marca Aquecimento estão publicados; isto não certifica
+conformidade. Ver [pendências jurídicas](../legal-readiness.md). Manter aceitação
+explícita da versão atual e declaração de maioridade; não reintroduzir RPCs ou
+clientes antigos. Alterações futuras de contrato exigem uma nova sequência
+coordenada e autorização própria, não execução das instruções históricas abaixo.
 Não renomear projetos/URLs/schema como efeito secundário da mudança de marca.
 
 Confirmar projeto, versão, histórico, backup/recuperação e autorização da operação.
@@ -54,7 +60,7 @@ alterar o destino do frontend servido.
 
 ## Cuidado particular com a instalação pré-abertura
 
-### Candidato de login/password e registo privado — 10/10/2026
+### Histórico: candidato de login/password e registo privado — 10/10/2026
 
 Após as incrementais anteriores, aplicar `20261010170027_private_registration_details.sql`
 e publicar o frontend correspondente apenas com autorização. O novo trigger
@@ -150,7 +156,7 @@ Em falha, impedir novas correspondências pelo mecanismo autorizado e corrigir
 em frente. Não restaurar permissões inseguras, broadcasts cliente ou inserção
 direta de denúncias para fazer o frontend antigo funcionar.
 
-## Publicação futura das correções A01–A04
+## Histórico: plano de publicação das correções A01–A04
 
 O candidato local de 08/10 acrescenta a migration
 `20261006141924_secure_suggestions_and_match_intents.sql`. Não foi aplicada num

@@ -89,6 +89,99 @@ function authFixture() {
   return { auth, chat, calls, replies, login, logout: promise => { logoutReply = promise; } };
 }
 
+test('empty INITIAL_SESSION waits for the explicit read; refresh failure preserves chat and retry recovers it', async () => {
+  for (const failure of ['error', 'reject']) {
+    const f = authFixture(); const pending = deferred(); let failures = 0;
+    const observe = getSession => observeAuthSession({
+      subscribe: callback => { callback('INITIAL_SESSION', null); return () => {}; }, getSession,
+      revision: () => f.auth.getState().sessionRevision,
+      apply: session => f.auth.getState().applyAuthEvent(session),
+      failed: () => { failures++; f.auth.getState().finishStartup(); },
+    });
+    const stop = observe(() => pending.promise);
+    assert.equal(f.chat.getState().roomId, 'room-a');
+    if (failure === 'error') pending.resolve({ data: { session: null }, error: new Error('offline') });
+    else pending.reject(new Error('offline'));
+    await tick(); stop();
+    assert.equal(failures, 1);
+    assert.equal(f.chat.getState().roomId, 'room-a');
+    assert.equal(f.auth.getState().user.id, 'alice');
+    const retry = observe(() => Promise.resolve({ data: { session: { user: { id: 'alice' } } }, error: null }));
+    await tick(); retry();
+    assert.equal(f.chat.getState().roomId, 'room-a');
+    assert.equal(f.auth.getState().user.id, 'alice');
+    assert.equal(failures, 1);
+  }
+});
+
+test('confirmed absence or real logout still clears chat, and a newer sign-in wins after empty INITIAL_SESSION', async () => {
+  for (const mode of ['absent', 'logout', 'new-signin']) {
+    const f = authFixture(); const pending = deferred(); let event; let failures = 0;
+    const stop = observeAuthSession({
+      subscribe: callback => { event = callback; callback('INITIAL_SESSION', null); return () => {}; },
+      getSession: () => pending.promise, revision: () => f.auth.getState().sessionRevision,
+      apply: session => f.auth.getState().applyAuthEvent(session), failed: () => failures++,
+    });
+    await tick();
+    if (mode === 'logout') event('SIGNED_OUT', null);
+    if (mode === 'new-signin') {
+      event('SIGNED_IN', { user: { id: 'carol' } });
+      f.chat.getState().setRoom('room-new', 'dan');
+    }
+    pending.resolve({ data: { session: null }, error: null });
+    await tick(); stop();
+    assert.equal(failures, 0);
+    assert.equal(f.auth.getState().user?.id ?? null, mode === 'new-signin' ? 'carol' : null);
+    assert.equal(f.chat.getState().roomId, mode === 'new-signin' ? 'room-new' : null);
+  }
+});
+
+test('installed SDK retryable refresh emits empty INITIAL_SESSION without discarding credentials or saved chat', { timeout: 10000 }, async () => {
+  const { AuthClient, AuthRetryableFetchError } = require('@supabase/supabase-js');
+  const local = storage(); const storageKey = 'sb-localhost-auth-token';
+  const saved = JSON.stringify({ access_token: 'synthetic-only', refresh_token: 'synthetic-only', token_type: 'bearer',
+    expires_in: 3600, expires_at: Date.now() / 1000 - 60, user: { id: 'alice' } });
+  local.setItem(storageKey, saved);
+  let networkRequests = 0;
+  const sdk = new AuthClient({ url: 'http://localhost:54321/auth/v1', headers: { apikey: 'synthetic-only' },
+    storage: local, storageKey, autoRefreshToken: false, skipAutoInitialize: true, detectSessionInUrl: false,
+    fetch: () => { networkRequests++; throw new Error('All network requests forbidden'); } });
+  // Keep the installed SDK's initialization, storage and notification paths;
+  // inject only the transport-level retryable refresh outcome.
+  sdk._refreshAccessToken = async () => ({ data: { session: null, user: null },
+    error: new AuthRetryableFetchError('Synthetic transient refresh failure', 503) });
+  const isolated = loader({ [path.resolve('src/lib/supabase.ts')]: { supabase: { auth: sdk } } }, { localStorage: local });
+  const observer = isolated('src/lib/authSession.ts').observeAuthSession;
+  const auth = isolated('src/store/authStore.ts').useAuthStore;
+  const chat = isolated('src/store/chatStore.ts').useChatStore;
+  chat.getState().setOwner('alice'); chat.getState().setRoom('existing-room', 'bob');
+  const initial = deferred(); const startup = deferred(); const applied = []; let failures = 0;
+  const stop = observer({
+    subscribe: callback => {
+      const { data: { subscription } } = sdk.onAuthStateChange((event, session) => {
+        if (event === 'INITIAL_SESSION') initial.resolve(session);
+        callback(event, session);
+      });
+      return () => subscription.unsubscribe();
+    },
+    getSession: () => sdk.getSession(), revision: () => auth.getState().sessionRevision,
+    apply: (session, event) => { applied.push({ event, authenticated: !!session }); auth.getState().applyAuthEvent(session); startup.resolve(); },
+    failed: () => { failures++; auth.getState().finishStartup(); startup.resolve(); },
+  });
+  try {
+    const [initialSession] = await Promise.all([initial.promise, startup.promise]);
+    await tick();
+    assert.equal(initialSession, null);
+    assert.equal(failures, 1);
+    assert.deepEqual(applied, []);
+    assert.equal(local.getItem(storageKey), saved);
+    assert.equal(chat.getState().roomId, 'existing-room');
+    assert.equal(auth.getState().isLoading, false);
+    assert.equal((await sdk.getSession()).error?.name, 'AuthRetryableFetchError');
+    assert.equal(networkRequests, 0);
+  } finally { stop(); await sdk.dispose(); }
+});
+
 test('logout preserves session/context on failed leave and on network failure', async () => {
   for (const stage of ['leave_room', 'signOut']) {
     const f = authFixture();

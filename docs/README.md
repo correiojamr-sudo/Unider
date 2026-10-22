@@ -5,8 +5,12 @@ os contratos entre interface, servidor e serviços externos.
 
 ## Por onde começar
 
-- [Preparação jurídica e de privacidade](legal-readiness.md): documentos 2.0,
-  maioridade declarada, contacto e pendências de publicação.
+- [Correção local do arranque Auth de 22/10](validation/2026-10-22-entry-readiness.md):
+  preservação do chat após falha transitória de renovação, regressões e limites.
+- [Publicação 2.1 de 22/10](validation/2026-10-22-release.md): versões integradas,
+  migration/Pages publicados, verificações e limites.
+- [Preparação jurídica e de privacidade](legal-readiness.md): documentos 2.1,
+  maioridade declarada, nome partilhado com o interlocutor e avaliações pendentes.
 
 - [README principal](../README.md): objetivo, instalação e comandos.
 - [Arquitetura](architecture.md): responsabilidades dos ficheiros e fluxos.
