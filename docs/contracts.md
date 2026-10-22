@@ -6,10 +6,13 @@ descreve o código; não comprova o estado de uma instalação alojada.
 
 ## Entrada e sessão no cliente
 
-A versão legal candidata é 2.1; a migration incremental
-`20261010183634_peer_display_name_terms_v21.sql` ainda não foi aplicada ao serviço.
-A versão 2.0 e as incrementais anteriores foram publicadas em 10/10; ver o
-[registo alojado](validation/2026-10-10-supabase-sync.md). Não editar/reaplicar os SQL anteriores.
+A versão legal atual é 2.1; a migration incremental local
+`20261010183634_peer_display_name_terms_v21.sql` foi aplicada em 22/10/2026,
+com histórico remoto `20261022104252_peer_display_name_terms_v21`. Ver o
+[registo da publicação 2.1](validation/2026-10-22-release.md). A versão 2.0 e as
+incrementais anteriores foram publicadas em 10/10; ver o
+[registo anterior](validation/2026-10-10-supabase-sync.md). Não editar/reaplicar os
+SQL anteriores nem usar `db push` sem reconciliar o histórico.
 `eligible` exige versão atual, data de aceitação e declaração de maioridade,
 além de conta não banida. O RPC antigo de um argumento deixa de estar concedido
 ao cliente. A declaração não comprova idade. Termos/privacidade são rotas públicas.

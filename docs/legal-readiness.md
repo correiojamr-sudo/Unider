@@ -1,8 +1,9 @@
 # Aquecimento — preparação jurídica e de privacidade
 
-10/10/2026; preparação local sobre `d32f451fcca016ca8753b56da94f1b1587d61579`.
-Não é parecer jurídico nem certificação de conformidade. Nenhuma publicação,
-configuração remota ou abertura de inscrições foi realizada.
+Preparação inicial de 10/10/2026, atualizada ao estado publicado de 22/10/2026
+(`b7a62bc`). Termos/privacidade 2.1 e a migration correspondente estão publicados;
+ver [registo e limites](validation/2026-10-22-release.md). Não é parecer jurídico
+nem certificação de conformidade. As avaliações pendentes abaixo mantêm-se.
 
 ## Decisões e documentos preparados
 
@@ -13,7 +14,7 @@ configuração remota ou abertura de inscrições foi realizada.
   aprovação, representação ou suporte oficial da Universidade de Coimbra.
 - Acesso apenas a maiores de 18 anos com email `@student.uc.pt`.
 
-`src/lib/legal.ts` é a fonte única dos termos e privacidade 2.0, utilizada nas
+`src/lib/legal.ts` é a fonte única dos termos e privacidade 2.1, utilizada nas
 rotas públicas `/termos` e `/privacidade` e no modal. Inclui responsável,
 contacto, conduta, limites, denúncias, conservação, destinatários e direitos.
 Aceitação contratual não é consentimento genérico RGPD.
@@ -26,24 +27,29 @@ repete a checkbox de registo. O modal pede confirmação explícita quando neces
 idade: pode haver declarações falsas. A migration de dados privados valida idade
 e aceitação no trigger de criação, mas não comprova documentos nem leitura.
 Contas antigas não têm data inventada; mantêm declaração e nova aceitação.
-Nome/nascimento/género são privados, também existem em metadados Auth e são
+O nome de apresentação é visível ao interlocutor autorizado, não num diretório
+público; não é uma identidade verificada. Nascimento e género não são partilhados
+no chat. Estes campos existem em `account_details` e em metadados Auth e são
 eliminados com a conta. O responsável deve justificar a necessidade de conservar
 a data completa (em vez de só maioridade) e de recolher nome/género; género não
 tem uso de emparelhamento nem finalidade analítica no código atual. O pedido do
 proprietário não substitui fundamento jurídico/minimização. Não anunciar
 conformidade antes dessa avaliação; não recolher documentos de identificação.
 
-Migration nova `20261010145007_adult_terms_v2.sql`: recusa clientes antigos e
+Migration histórica `20261010145007_adult_terms_v2.sql`: recusa clientes antigos e
 declarações falsas/nulas, sem atribuir maioridade a contas existentes. A versão
-1.1 exige nova aceitação. Guardar cópia exata do texto aceite em Git/artefacto
-de release; qualquer alteração material posterior exige nova versão.
+1.1 exigiu nova aceitação. A migration posterior
+`20261010183634_peer_display_name_terms_v21.sql` exige 2.1 e não preenche aceitação
+por ninguém; não reaplicar migrations já publicadas. Guardar cópia exata do texto
+aceite em Git/artefacto de release; qualquer alteração material posterior exige
+nova versão.
 
 ## Inventário e fundamentos propostos para validação
 
 | Dados / finalidade | Conservação no código | Fundamento proposto, não parecer |
 | --- | --- | --- |
 | Email, ID, perfil, aceitação, declaração / acesso | Até eliminação da conta/perfil | Contrato, art. 6.º/1/b, só no necessário |
-| Nome de uso, nascimento declarado, género opcional / registo privado | `account_details` e metadados Auth até eliminação da conta; backups têm ciclos próprios | Validar necessidade, fundamento e alternativa menos intrusiva antes de publicar; não presumir necessidade contratual para género |
+| Nome de apresentação / identificação perante o interlocutor; nascimento declarado e género opcional / registo privado | `account_details` e metadados Auth até eliminação da conta; só o nome é partilhado no chat; backups têm ciclos próprios | Validar necessidade, fundamento e alternativa menos intrusiva; não presumir necessidade contratual para género |
 | Fila, intenções, salas / emparelhamento | Limpeza de leases expiradas; intenções anteriores ao dia Lisboa menos um; salas hard close mais um dia | Necessidade contratual |
 | Mensagens / entrega e recuperação | Redis: buffer inteiro 300 s após último append novo; deduplicação 600 s; sessionStorage tem ciclo independente | Contrato para dados comuns; categorias especiais exigem avaliação própria |
 | Denúncia, conteúdo disponível, IDs/data/estado / abuso | Limpeza de registos com mais de 30 dias; texto pode identificar após eliminação | Interesse legítimo sujeito a ponderação; arts. 9.º/10.º não resolvidos automaticamente |
@@ -51,7 +57,7 @@ de release; qualquer alteração material posterior exige nova versão.
 | IP/logs/backups / operação e segurança | Não comprovado pelos TTLs ou SQL | Confirmar fornecedores e prazos |
 | Pedidos de direitos no Gmail / resposta | Prazo de arquivo a definir | Deveres RGPD; minimizar dados e acesso |
 
-## Pendências antes de anunciar conformidade ou publicar
+## Pendências antes de anunciar conformidade ou abrir acesso
 
 1. **Fornecedores/transferências:** registar entidades jurídicas, regiões reais,
    subcontratantes, DPA/contratos art. 28.º e garantias art. 44.º e seguintes.

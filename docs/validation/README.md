@@ -28,7 +28,8 @@ Executar apenas em ambiente e com identidades autorizados. Ver
       quando o objetivo exigir TTL, sem trocar uma simulação por espera real.
 - [ ] Envios/denúncias simultâneos, dois denunciantes e falha de persistência:
       prova recuperável durante a janela disponível e sem sobrescrita vazia.
-- [ ] Dois browsers: OTP, consentimento, refresh, Novo Chat, ambos os votos,
+- [ ] Dois browsers: registo email/password, confirmação, login, recuperação,
+      aceitação 2.1 e nome apenas ao interlocutor, refresh, Novo Chat, ambos os votos,
       separador fechado, reconexão, 22:48 e 22:50.
 - [ ] Ban/eliminação numa sessão ativa; tentar operações com tokens anteriores;
       confirmar permissões e conservação da prova.

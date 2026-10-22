@@ -3,7 +3,9 @@ import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { AUTH_TIMEOUT_MS } from './authOperations';
 import { getPublicConfig } from './publicConfig';
 
-// The subscription wins over an older initial read, including its rejection.
+// Confirmed subscription events win over an older initial read. INITIAL_SESSION
+// null can also mean a retryable refresh failure, so the explicit read must
+// confirm absence before we discard persisted chat/queue context.
 export function observeAuthSession(options: {
   subscribe: (callback: (event: AuthChangeEvent, session: Session | null) => void) => () => void;
   getSession: () => PromiseLike<{ data: { session: Session | null }; error?: unknown }>;
@@ -16,6 +18,7 @@ export function observeAuthSession(options: {
   const revision = options.revision();
   const unsubscribe = options.subscribe((event, session) => {
     if (!active) return;
+    if (event === 'INITIAL_SESSION' && !session) return;
     receivedEvent = true;
     options.apply(session, event);
   });
