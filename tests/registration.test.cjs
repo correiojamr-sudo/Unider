@@ -11,6 +11,8 @@ test('registration validates adult boundary in Lisbon, real dates, names and new
   assert.equal(validAdultBirthDate('2008-02-29', new Date('2026-03-01T12:00:00Z')), true);
   assert.equal(validAdultBirthDate('2008-10-11', new Date('2026-10-10T23:30:00Z')), true);
   assert.equal(validRegistrationName(' João '), true);
+  assert.equal(validRegistrationName('𠮷'.repeat(80)), true);
+  assert.equal(validRegistrationName('𠮷'.repeat(81)), false);
   for (const value of ['', '   ', 'a'.repeat(81), 'a\nb']) assert.equal(validRegistrationName(value), false);
   assert.equal(validNewPassword('123456789012'), true);
   assert.equal(validNewPassword('a'.repeat(128)), true);

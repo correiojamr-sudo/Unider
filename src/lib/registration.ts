@@ -19,6 +19,7 @@ export function validAdultBirthDate(value: string, today = new Date()) {
 
 export function validRegistrationName(value: string) {
   const name = value.trim();
-  return name.length >= 1 && name.length <= 80 &&
+  // PostgreSQL char_length counts Unicode code points, not JavaScript UTF-16 units.
+  return name.length >= 1 && Array.from(name).length <= 80 &&
     !Array.from(name).some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
 }

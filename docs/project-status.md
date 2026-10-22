@@ -1,5 +1,43 @@
 # Estado e trabalho pendente
 
+## Continuação do candidato 2.1 — 22/10/2026
+
+Reproduzida e corrigida a contagem UTF-16 que recusava nomes Unicode válidos
+no servidor. Registo e estado da sala partilham a validação; o input deixa
+passar os 80 caracteres sem truncar caracteres suplementares. Sem fluxo novo
+de migração de contas. Alterações anteriores e branch preservadas; sem deploy
+ou alteração de serviços nesta continuação. Ver
+[evidência e limites atuais](validation/2026-10-22-display-name-validation.md).
+
+Validação final serial com cinco browsers: 112 aprovados, zero falhas, dois
+excluídos por concorrência PGlite; lint/build passaram. O proprietário autorizou
+commit/push/novo PR deste candidato; sem merge nem deploy. A ausência de
+publicação GitHub nos registos de 10/10 abaixo refere-se à entrega histórica,
+não a esta nova autorização. Confirmar commit e CI no novo PR.
+
+## Nome de apresentação — candidato local 2.1, 10/10/2026
+
+Nome do registo preparado para aparecer apenas ao interlocutor autorizado no
+cabeçalho e nas mensagens recebidas. Email, nascimento e género não são expostos.
+Avisos e documentos distinguem visibilidade ao interlocutor de publicação na
+Internet. Nova migration exige aceitação 2.1 por ambos antes de fornecer nomes;
+não altera migrations aplicadas nem preenche dados de contas antigas.
+Sem publicação Supabase/Pages, commit ou push desta alteração.
+Ver [entrega e validação](validation/2026-10-10-display-names.md).
+
+## Supabase sincronizado — 10/10/2026
+
+[Certain] PR #10 integrado em `main` (`7695f61`); pasta local sincronizada.
+Com autorização do proprietário, aplicadas as quatro migrations incrementais
+e publicadas as quatro Functions no projeto `ymzcsoyylrpkdflnlvkg`, preservando
+a conta existente. Site URL/redirects corrigidos para Pages; confirmação de
+email e canais privados mantidos. Não houve deploy Pages nesta operação.
+SMTP personalizado ainda desligado e integração autenticada/Redis/browsers
+ainda por validar. Não confundir esta atualização com aprovação de lançamento.
+Ver [versões remotas, reconciliação e limites](validation/2026-10-10-supabase-sync.md).
+Os registos abaixo são históricos; «não aplicado/publicado» refere a entrega
+local correspondente, não o estado após esta sincronização.
+
 ## Publicação GitHub de login/registo — 10/10/2026
 
 [Certain] Proprietário autorizou commit/push e novo PR para login/password,

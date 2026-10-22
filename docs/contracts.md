@@ -6,8 +6,10 @@ descreve o código; não comprova o estado de uma instalação alojada.
 
 ## Entrada e sessão no cliente
 
-A versão legal preparada é 2.0; a migration incremental
-`20261010145007_adult_terms_v2.sql` ainda não foi aplicada ao serviço alojado.
+A versão legal candidata é 2.1; a migration incremental
+`20261010183634_peer_display_name_terms_v21.sql` ainda não foi aplicada ao serviço.
+A versão 2.0 e as incrementais anteriores foram publicadas em 10/10; ver o
+[registo alojado](validation/2026-10-10-supabase-sync.md). Não editar/reaplicar os SQL anteriores.
 `eligible` exige versão atual, data de aceitação e declaração de maioridade,
 além de conta não banida. O RPC antigo de um argumento deixa de estar concedido
 ao cliente. A declaração não comprova idade. Termos/privacidade são rotas públicas.
@@ -19,7 +21,7 @@ guardada em perfil, logs ou armazenamento próprio. Uma sessão Auth válida con
 a evitar repetir login. Guardas/armazenamento scoped são preservados.
 
 Registo chama `signUp` com email/password e metadados iniciais: nome de uso,
-data de nascimento ISO, género male/female/undisclosed, versão 2.0 e declaração
+data de nascimento ISO, género male/female/undisclosed, versão 2.1 e declaração
 explícita. UI exige password 12–128 caracteres e aceitação; os limites reais da
 password também devem ser configurados em Auth, não são impostos por SQL.
 Links públicos permitem leitura; checkbox não prova leitura efetiva.
@@ -32,7 +34,19 @@ com DELETE CASCADE; regista aceitação no perfil protegido. Os metadados inicia
 também existem em Auth e podem constar da sessão/JWT do próprio. Alterar esses
 metadados posteriormente não altera dados privados/consentimento/ban, nem concede
 acesso. Nunca decidir autorização por user_metadata/JWT editável.
-Os dados não são incluídos nos contratos do chat ou no emparelhamento.
+Email, nascimento e género não são incluídos nos contratos do chat ou no
+emparelhamento. O nome é partilhado apenas como `peer_name` no estado da sala,
+através do helper privado sem EXECUTE cliente e dos RPCs autorizados existentes.
+`account_details` conserva SELECT só do próprio; não se concede leitura direta
+entre participantes. O campo é opcional no cliente por compatibilidade com a
+versão alojada 2.0 e pode ser null nas contas antigas. A UI usa «Colega» nesse
+caso, valida o nome (1–80 caracteres, sem controlos/espaços externos) e renderiza
+texto, nunca HTML. O nome não é guardado no store de chat nem nos payloads de
+mensagem/Redis; segue o estado RPC e as guards de sala/identidade já existentes.
+O limite conta pontos de código Unicode, como `char_length` no PostgreSQL,
+não unidades UTF-16 do JavaScript. O input permite até 160 unidades UTF-16 para
+não truncar 80 caracteres suplementares; a validação de registo continua a
+recusar mais de 80 caracteres. Registo e receção do estado usam o mesmo helper.
 
 Contas antigas não recebem nome, nascimento ou género inventados; continuam a
 precisar dos termos atuais e declaração. Quem só usava OTP pode definir uma
@@ -88,7 +102,7 @@ email, ID de utilizador nem uma notificação `SIGNED_OUT` de origem antiga.
 
 | Operação | Entrada | Resultado/função |
 | --- | --- | --- |
-| `accept_terms` | `p_version: '2.0'`, `p_adult: true` | `true`; guarda versão, data e `adult_declared_at` no servidor. |
+| `accept_terms` | `p_version: '2.1'`, `p_adult: true` | `true`; guarda versão, data e `adult_declared_at` no servidor. |
 | `find_or_join_match` | `p_intent: uuid`, `p_day: date` | `waiting`, `closed`, `cancelled` ou objeto `matched`; intenção da entrada no separador. |
 | `get_room_state` | `p_room: uuid` | `RoomState`; valida membership e renova heartbeat. |
 | `get-server-time` (Function) | `POST {}` com JWT de utilizador | `{ server_now: ISO UTC canónico }`; apenas apresentação, sem mutações. |
@@ -105,7 +119,7 @@ identidade escolhida pelo cliente. `authorize_room(p_room,p_user,p_operation)` e
 `persist_room_report(p_room,p_user,p_transcript)` são RPCs exclusivos de
 `service_role`, não APIs para o browser.
 
-`RoomState` inclui `room_id`, `peer_id`, `expires_at`, `hard_close_at`,
+`RoomState` inclui `room_id`, `peer_id`, `peer_name`, `expires_at`, `hard_close_at`,
 `decision_until`, `ended_at`, `end_reason`, `extended_once`, `extended`,
 `peer_extended` e `server_now`. Mudanças neste formato são transversais: atualizar
 SQL, hook, helper, interface e testes na mesma tarefa atribuída.
@@ -199,7 +213,8 @@ aceite; repetir um ID já aceite não prolonga a retenção. Retry/cancelamento
 não recuperam conteúdo expirado. A limpeza periódica elimina denúncias com
 mais de 30 dias, sem garantir uma hora exata de eliminação. A confirmação de
 apagamento da conta mantém essa distinção e os prazos separados de participação,
-buffer e metadados. Finalidades e versão de consentimento `1.1` mantêm-se.
+buffer e metadados. U05 conservava a versão `1.1` nessa entrega histórica;
+o candidato atual exige `2.1`, conforme o contrato de entrada acima.
 
 A semântica/foco dos modais é apresentação: Escape não aceita nem dispensa
 termos obrigatórios e a confirmação continua a exigir resposta servidor `true`.
@@ -234,7 +249,7 @@ Recuperação pendente não bloqueia saída ou denúncia.
 
 `isQueueing`, `queueDay` e `queueIntent: { id, day }` conservam a intenção de espera no separador para o
 mesmo `ownerId` e dia de Lisboa. A entrada automática pelo lobby exige essa
-intenção, ausência de sala, fase de novos pares e termos `1.1` confirmados para
+intenção, ausência de sala, fase de novos pares e termos atuais `2.1` confirmados para
 o utilizador atual. Cancelamento confirmado remove a intenção; contexto antigo sem UUID/data ou
 do dia anterior não ativa entrada. Limpar a intenção não limpa uma sala existente.
 Estes campos não concedem membership nem autorização: o RPC continua a validar

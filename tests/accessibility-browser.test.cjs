@@ -43,7 +43,7 @@ test('browser keyboard: modal isolation, required consent, restoration and compa
     export const supabase = {
       from() { const query = { select() { return query; }, eq() { return query; },
         abortSignal() { return query; },
-        single() { return Promise.resolve({ data: { terms_version: window.fixture.terms === 'accepted' ? '2.0' : null }, error: null }); } }; return query; },
+        single() { return Promise.resolve({ data: { terms_version: window.fixture.terms === 'accepted' ? '2.1' : null }, error: null }); } }; return query; },
       rpc(name, args) {
         window.fixture.calls.push({ name, args });
         if (name === 'accept_terms' && window.fixture.accept) window.fixture.terms = 'accepted';
@@ -137,7 +137,7 @@ test('browser keyboard: modal isolation, required consent, restoration and compa
     await page.evaluate(() => { window.fixture.accept = true; }); await terms.getByRole('checkbox').check(); await accept.click();
     await terms.waitFor({ state: 'detached' }); await focused(close);
     await page.keyboard.press('Escape'); await focused(trigger);
-    assert.deepEqual(await page.evaluate(() => window.fixture.calls.map(call => call.args)), [{ p_version: '2.0', p_adult: true }, { p_version: '2.0', p_adult: true }]);
+    assert.deepEqual(await page.evaluate(() => window.fixture.calls.map(call => call.args)), [{ p_version: '2.1', p_adult: true }, { p_version: '2.1', p_adult: true }]);
 
     // Actual Lobby consent gate also survives Escape and does not create queue intent.
     await page.evaluate(() => {

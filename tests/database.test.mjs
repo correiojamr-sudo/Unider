@@ -107,7 +107,7 @@ test('PostgreSQL roles, consent, room lifecycle and account deletion', async t =
     }
 
     await t.test('private registration: server age/consent validation, own-only reads, confirmation and metadata isolation', async () => {
-      const data = { registration_name: ' Nome privado ', birth_date: '2000-01-01', gender: 'undisclosed', adult: true, terms_version: '2.0' };
+      const data = { registration_name: ' Nome privado ', birth_date: '2000-01-01', gender: 'undisclosed', adult: true, terms_version: '2.1' };
       for (const change of [{ birth_date: '2008-10-03' }, { birth_date: '2027-01-01' }, { birth_date: '2000-02-30' },
         { birth_date: '1899-12-31' }, { birth_date: null }, { registration_name: '' }, { registration_name: 'x'.repeat(81) },
         { gender: 'other' }, { gender: null }, { adult: false }, { adult: 'true' }, { terms_version: '1.1' }]) {
@@ -131,6 +131,16 @@ test('PostgreSQL roles, consent, room lifecycle and account deletion', async t =
       assert.equal((await rpc(id, 'find_or_join_match')).status, 'waiting');
       await rpc(id, 'delete_own_user_account');
       assert.equal((await db.query('SELECT count(*)::int AS n FROM public.account_details WHERE user_id=$1', [id])).rows[0].n, 0);
+    });
+
+    await t.test('registration server counts Unicode names by code point up to 80', async () => {
+      const metadata = {registration_name:'𠮷'.repeat(80),birth_date:'2000-01-01',gender:'undisclosed',adult:true,terms_version:'2.1'};
+      const id = randomUUID();
+      await db.query('INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES($1,$2,$3)', [id,'unicode@student.uc.pt',JSON.stringify(metadata)]);
+      assert.equal((await as(id, 'SELECT name,char_length(name) AS size FROM public.account_details'))[0].size, 80);
+      await denied(() => db.query('INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES($1,$2,$3)',
+        [randomUUID(),'toolong@student.uc.pt',JSON.stringify({...metadata,registration_name:'𠮷'.repeat(81)})]));
+      await rpc(id, 'delete_own_user_account');
     });
 
     await t.test('A01 approval is admin-only across INSERT, NULL, upsert and inherited column grants', async () => {
@@ -175,20 +185,21 @@ test('PostgreSQL roles, consent, room lifecycle and account deletion', async t =
       await denied(() => rpc(a, 'find_or_join_match'));
       await denied(() => rpc(a, 'accept_terms', ['1.0']));
       await denied(() => rpc(a, 'accept_terms', ['1.1', true]));
-      await denied(() => rpc(a, 'accept_terms', ['2.0']));
-      await denied(() => rpc(a, 'accept_terms', ['2.0', false]));
-      await denied(() => rpc(a, 'accept_terms', ['2.0', null]));
-      await denied(() => as(null, "SELECT public.accept_terms('2.0',true)", [], 'anon'));
+      await denied(() => rpc(a, 'accept_terms', ['2.0', true]));
+      await denied(() => rpc(a, 'accept_terms', ['2.1']));
+      await denied(() => rpc(a, 'accept_terms', ['2.1', false]));
+      await denied(() => rpc(a, 'accept_terms', ['2.1', null]));
+      await denied(() => as(null, "SELECT public.accept_terms('2.1',true)", [], 'anon'));
       await denied(() => as(a, 'UPDATE public.profiles SET adult_declared_at=now() WHERE id=$1', [a]));
-      for (const user of [a, b, c]) assert.equal(await rpc(user, 'accept_terms', ['2.0', true]), true);
+      for (const user of [a, b, c]) assert.equal(await rpc(user, 'accept_terms', ['2.1', true]), true);
       const declaration = (await as(a, 'SELECT terms_version,terms_accepted_at,adult_declared_at FROM public.profiles WHERE id=$1', [a]))[0];
-      assert.equal(declaration.terms_version, '2.0');
+      assert.equal(declaration.terms_version, '2.1');
       assert.ok(declaration.terms_accepted_at && declaration.adult_declared_at);
       await db.query('UPDATE public.profiles SET adult_declared_at=NULL WHERE id=$1', [a]);
       await denied(() => rpc(a, 'find_or_join_match'));
-      await rpc(a, 'accept_terms', ['2.0', true]);
+      await rpc(a, 'accept_terms', ['2.1', true]);
       await db.query('UPDATE public.profiles SET is_banned=true WHERE id=$1', [c]);
-      await denied(() => rpc(c, 'accept_terms', ['2.0', true]));
+      await denied(() => rpc(c, 'accept_terms', ['2.1', true]));
       await denied(() => rpc(c, 'find_or_join_match'));
       await db.query('UPDATE public.profiles SET is_banned=false WHERE id=$1', [c]);
     });
@@ -207,6 +218,27 @@ test('PostgreSQL roles, consent, room lifecycle and account deletion', async t =
       const authorized = await as(a, 'SELECT public.authorize_room($1,$2,$3) AS value', [room.room_id, a, 'message'], 'service_role');
       assert.equal(authorized[0].value.peer_id, b);
       await denied(() => as(c, 'SELECT public.authorize_room($1,$2,$3)', [room.room_id, c, 'report'], 'service_role'));
+    });
+
+    await t.test('display name is limited to the authorized peer after 2.1 acceptance, never private registration fields', async () => {
+      await db.query("INSERT INTO public.account_details(user_id,name,birth_date,gender) VALUES($1,'Alice','2000-01-01','female'),($2,'Bob <b>','1999-01-01','male')", [a,b]);
+      const aliceView = await rpc(a, 'get_room_state', [room.room_id]);
+      const bobView = await rpc(b, 'get_room_state', [room.room_id]);
+      assert.equal(aliceView.peer_name, 'Bob <b>'); assert.equal(bobView.peer_name, 'Alice');
+      for (const key of ['name','birth_date','gender','email','account_details']) assert.equal(key in aliceView, false);
+      assert.equal((await as(a, 'SELECT name FROM public.account_details WHERE user_id=$1', [b])).length, 0);
+      await denied(() => rpc(c, 'get_room_state', [room.room_id]));
+      await denied(() => as(a, 'SELECT unider_private.room_json(r,$1) FROM public.active_rooms r WHERE id=$2', [a,room.room_id]));
+      const snapshot = user => db.query('SELECT unider_private.room_json(r,$1) AS value FROM public.active_rooms r WHERE id=$2', [user,room.room_id]);
+      assert.equal((await snapshot(c)).rows[0].value, null);
+      await db.query("UPDATE public.profiles SET terms_version='2.0' WHERE id=$1", [b]);
+      assert.equal((await snapshot(a)).rows[0].value.peer_name, null);
+      assert.equal((await snapshot(b)).rows[0].value.peer_name, null);
+      await rpc(b, 'accept_terms', ['2.1',true]);
+      await db.query('UPDATE auth.users SET raw_user_meta_data=$2 WHERE id=$1', [b,JSON.stringify({registration_name:'Forged name'})]);
+      assert.equal((await rpc(a, 'get_room_state', [room.room_id])).peer_name, 'Bob <b>');
+      await db.query('DELETE FROM public.account_details WHERE user_id=$1', [b]);
+      assert.equal((await rpc(a, 'get_room_state', [room.room_id])).peer_name, null);
     });
 
     await t.test('private read policy and restrictive INSERT guard withstand a broad pre-existing policy', async () => {
@@ -365,7 +397,7 @@ test('PostgreSQL roles, consent, room lifecycle and account deletion', async t =
     await t.test('deletion succeeds with retained reports, deleted JWT loses authority', async () => {
       await rpc(a, 'delete_own_user_account');
       assert.equal((await db.query("SELECT reported_id FROM public.reported_chats WHERE room_id='fake'")).rows[0].reported_id, null);
-      await denied(() => rpc(a, 'accept_terms', ['2.0', true]));
+      await denied(() => rpc(a, 'accept_terms', ['2.1', true]));
       await denied(() => rpc(a, 'find_or_join_match'));
       assert.equal((await db.query('SELECT count(*)::int AS n FROM auth.users WHERE id=$1', [a])).rows[0].n, 0);
     });
@@ -387,8 +419,8 @@ test('PostgreSQL roles, consent, room lifecycle and account deletion', async t =
       await as(b, 'SELECT public.persist_room_report($1,$2,$3)', [fresh.room_id, b, '[]'], 'service_role');
       assert.deepEqual((await db.query('SELECT transcript FROM public.reported_chats WHERE id=$1', [saved[0].id])).rows[0].transcript, evidence);
       // Restore a disposable fixture for the independent concurrency scenario.
-      await db.query('INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES($1,$2,$3)', [c, 'c@student.uc.pt', JSON.stringify({ registration_name: 'Fixture', birth_date: '2000-01-01', gender: 'undisclosed', adult: true, terms_version: '2.0' })]);
-      await rpc(c, 'accept_terms', ['2.0', true]);
+      await db.query('INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES($1,$2,$3)', [c, 'c@student.uc.pt', JSON.stringify({ registration_name: 'Fixture', birth_date: '2000-01-01', gender: 'undisclosed', adult: true, terms_version: '2.1' })]);
+      await rpc(c, 'accept_terms', ['2.1', true]);
     });
 
     await t.test('actual concurrent PostgreSQL transactions preserve one open room per user',

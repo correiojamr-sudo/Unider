@@ -86,15 +86,15 @@ export default function Login() {
           onChange={e => { clear(); setPassword(e.target.value); }} className={fieldClass} required aria-describedby={mode === 'REGISTER' ? 'password-help' : undefined} />
           {mode === 'REGISTER' && <p id="password-help" className="text-xs text-slate-400">Entre 12 e 128 caracteres. Usa uma password única.</p>}</div>
         {mode === 'REGISTER' && <>
-          <div><label htmlFor="name">Nome</label><input id="name" autoComplete="nickname" maxLength={80} value={name}
-            onChange={e => { clear(); setName(e.target.value); }} className={fieldClass} required />
-            <p className="text-xs text-slate-400">Pode ser o nome pelo qual queres ser tratado. Não aparece ao outro participante.</p></div>
+          <div><label htmlFor="name">Nome de apresentação</label><input id="name" autoComplete="nickname" maxLength={160} value={name}
+            onChange={e => { clear(); setName(e.target.value); }} className={fieldClass} required aria-describedby="name-help" />
+            <p id="name-help" className="text-xs text-slate-400">Entre 1 e 80 caracteres. Este nome aparece ao outro participante da conversa. Pode ser um nome de uso; não precisas de indicar o nome completo.</p></div>
           <div><label htmlFor="birth-date">Data de nascimento</label><input id="birth-date" type="date" autoComplete="bday" min="1900-01-01" value={birthDate}
             onChange={e => { clear(); setBirthDate(e.target.value); }} className={fieldClass} required /></div>
           <div><label htmlFor="gender">Género</label><select id="gender" value={gender} onChange={e => { clear(); setGender(e.target.value as Gender); }} className={fieldClass}>
             <option value="undisclosed">Prefiro não divulgar</option><option value="male">Masculino</option><option value="female">Feminino</option>
           </select></div>
-          <p className="text-xs text-slate-400">Nome, nascimento e género ficam privados. A data declarada não é prova documental de idade.</p>
+          <p className="text-xs text-slate-400">O nome é visível ao interlocutor. Data de nascimento, género e email não são partilhados no chat. A data declarada não é prova documental de idade.</p>
           <label className="flex items-start gap-3 p-3 bg-slate-800/50 rounded-xl border border-slate-700/50">
             <input type="checkbox" checked={legalAccepted} onChange={e => { clear(); setLegalAccepted(e.target.checked); }} required className="mt-1 shrink-0" />
             <span className="text-xs text-slate-400">Declaro que tenho 18 ou mais anos e aceito os Termos de Utilização. Li a informação de privacidade. As conversas usam um buffer temporário; uma denúncia pode guardar o conteúdo disponível.</span>

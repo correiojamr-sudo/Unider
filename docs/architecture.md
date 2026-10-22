@@ -18,7 +18,7 @@ manifesto/service worker que demonstre essa funcionalidade completa.
 | --- | --- |
 | `src/main.tsx` | Valida configuração antes de importar App; monta React ou diagnóstico recuperável. |
 | `src/App.tsx` | Rotas, guardas de sessão e observação do estado Auth. |
-| `src/pages/Login.tsx` | Login email/password, registo com dados privados/aceitação e reenvio de confirmação. |
+| `src/pages/Login.tsx` | Login email/password, registo com nome de apresentação, dados privados/aceitação e reenvio de confirmação. |
 | `src/pages/RecoverPassword.tsx`, `src/lib/registration.ts` | Recuperação autenticada da password e validações de registo. |
 | `src/pages/Lobby.tsx` | Contagem, sugestões, termos, espera e entrada no chat. |
 | `src/pages/Chat.tsx` | Receção privada, envio, retry, extensão, denúncia e saída. |
@@ -56,12 +56,18 @@ manifesto/service worker que demonstre essa funcionalidade completa.
 `Login` usa email/password em Supabase Auth, separando login e registo. `App` acompanha a sessão, e
 `authStore` liga o contexto de chat ao utilizador. `Lobby` lê a versão dos termos
 para esse utilizador e bloqueia entrada enquanto a consulta está pendente ou falha;
-`TermsModal` chama `accept_terms('2.0', true)`. O servidor exige elegibilidade nas
+`TermsModal` chama `accept_terms('2.1', true)`. O servidor exige elegibilidade nas
 operações sensíveis: sessão visual não substitui autorização.
 
 O email é normalizado com `trim`/minúsculas e validado como endereço completo;
 a password não é normalizada. O trigger valida novos registos e guarda nome,
-nascimento e género privados em `account_details`, com leitura só do próprio.
+nascimento e género em `account_details`, com leitura direta só do próprio.
+O nome é de apresentação: o helper privado `room_json` fornece apenas esse campo
+como `peer_name` ao interlocutor autorizado, depois da aceitação 2.1 por ambos.
+Não expõe email, nascimento ou género nem cria um diretório público.
+O chat mostra o nome no cabeçalho e nas mensagens recebidas, como texto React,
+sem interpretar HTML. Ausência do campo/nome usa «Colega»; não se inventam dados.
+O nome vem do estado RPC validado no contexto atual, não de JWTs ou broadcasts.
 Os dados iniciais também ficam nos metadados Auth; estes nunca decidem acesso.
 O servidor exige confirmação de email, consentimento atual e ausência de ban.
 Recuperação por ligação Auth permite definir uma password nas contas antigas;
